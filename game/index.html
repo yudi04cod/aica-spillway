@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SPILLWAY — Tactical Breach at Meridian Dam</title>
+<style>
+  /* Dusk over the dam: deep teal water, weathered concrete, sodium amber.
+     Runners are cyan, Wardens are amber; every HUD colour is one of those. */
+  :root {
+    --ink: #e8f1f2;
+    --dim: #9fb4bd;
+    --panel: rgba(8, 18, 22, 0.66);
+    --line: rgba(159, 180, 189, 0.35);
+    --atk: #39d5e8;
+    --def: #ffb02e;
+    --danger: #ff5340;
+    --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-num: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #10181c; color: var(--ink); font-family: var(--font-ui); }
+  #game, #game canvas { position: fixed; inset: 0; display: block; }
+  .hidden { display: none !important; }
+
+  /* Centre: crosshair + hitmarker */
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 24px; height: 24px; transform: translate(-50%, -50%); pointer-events: none; }
+  #crosshair i { position: absolute; background: var(--ink); opacity: .9; box-shadow: 0 0 3px #000; }
+  #crosshair i:nth-child(1) { left: 11px; top: 0; width: 2px; height: 7px; }
+  #crosshair i:nth-child(2) { left: 11px; bottom: 0; width: 2px; height: 7px; }
+  #crosshair i:nth-child(3) { top: 11px; left: 0; height: 2px; width: 7px; }
+  #crosshair i:nth-child(4) { top: 11px; right: 0; height: 2px; width: 7px; }
+  #crosshair b { position: absolute; left: 11px; top: 11px; width: 2px; height: 2px; background: var(--atk); }
+  #hitmarker { position: fixed; left: 50%; top: 50%; width: 28px; height: 28px; transform: translate(-50%, -50%) rotate(45deg); opacity: 0; pointer-events: none; }
+  #hitmarker.on { opacity: 1; }
+  #hitmarker i { position: absolute; background: #fff; }
+  #hitmarker.head i { background: var(--danger); }
+  #hitmarker i:nth-child(1) { left: 13px; top: 0; width: 2px; height: 8px; }
+  #hitmarker i:nth-child(2) { left: 13px; bottom: 0; width: 2px; height: 8px; }
+  #hitmarker i:nth-child(3) { top: 13px; left: 0; height: 2px; width: 8px; }
+  #hitmarker i:nth-child(4) { top: 13px; right: 0; height: 2px; width: 8px; }
+
+  /* Top centre: clock + score */
+  #topbar { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); display: flex; align-items: stretch; gap: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; pointer-events: none; }
+  #topbar .side { padding: 6px 14px; text-align: center; min-width: 118px; }
+  #topbar .side .tname { font-size: 11px; letter-spacing: .14em; color: var(--dim); }
+  #topbar .side .tscore { font-family: var(--font-num); font-size: 30px; line-height: 1; }
+  #topbar .atk .tscore { color: var(--atk); }
+  #topbar .def .tscore { color: var(--def); }
+  #topbar .pips { font-size: 9px; letter-spacing: 2px; color: var(--dim); }
+  #topbar .mid { padding: 6px 16px; text-align: center; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+  #timer { font-family: var(--font-num); font-size: 30px; line-height: 1; }
+  #timer.urgent { color: var(--danger); }
+  #roundno { font-size: 10px; letter-spacing: .18em; color: var(--dim); margin-top: 3px; }
+
+  /* Top left: radar + tags */
+  #radarbox { position: fixed; top: 14px; left: 14px; pointer-events: none; }
+  #radar { border: 1px solid var(--line); border-radius: 6px; display: block; }
+  .tag { margin-top: 8px; padding: 5px 10px; border-radius: 4px; font-size: 12px; letter-spacing: .12em; text-align: center; display: none; }
+  #carriertag { background: rgba(57, 213, 232, .18); border: 1px solid var(--atk); color: var(--atk); }
+  #plantedtag { background: rgba(255, 83, 64, .18); border: 1px solid var(--danger); color: #ffb0a6; }
+
+  /* Top right: killfeed */
+  #killfeed { position: fixed; top: 14px; right: 14px; width: 330px; pointer-events: none; }
+  .feedrow { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 5px 9px; margin-bottom: 5px; font-size: 12.5px; transition: opacity .4s; }
+  .feedrow i { color: var(--dim); font-style: normal; float: right; }
+  .feedrow .atk { color: var(--atk); } .feedrow .def { color: var(--def); }
+  .feedrow.note { color: var(--dim); text-align: center; }
+
+  /* Bottom left: vitals */
+  #vitals { position: fixed; left: 22px; bottom: 20px; pointer-events: none; }
+  #health { font-family: var(--font-num); font-size: 58px; line-height: .95; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
+  #health::before { content: '✚ '; font-size: 26px; color: var(--atk); }
+  #armorwrap { width: 170px; height: 7px; background: rgba(255,255,255,.14); border-radius: 3px; margin-top: 6px; }
+  #armorbar { height: 100%; width: 0%; background: var(--dim); border-radius: 3px; transition: width .2s; }
+  #vitlabel { font-size: 11px; letter-spacing: .16em; color: var(--dim); margin-top: 5px; }
+
+  /* Bottom right: weapon + money */
+  #weaponbox { position: fixed; right: 22px; bottom: 20px; text-align: right; pointer-events: none; }
+  #money { font-family: var(--font-num); font-size: 21px; color: #9fe870; }
+  #ammoline { display: flex; align-items: baseline; justify-content: flex-end; gap: 7px; }
+  #ammo { font-family: var(--font-num); font-size: 58px; line-height: .95; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
+  #reserve { font-family: var(--font-num); font-size: 21px; color: var(--dim); }
+  #weaponname { font-size: 12.5px; letter-spacing: .14em; color: var(--dim); margin-top: 2px; }
+
+  /* Banners */
+  #banner { position: fixed; top: 21%; left: 0; right: 0; text-align: center; font-size: 44px; font-weight: 700; letter-spacing: .22em; text-shadow: 0 3px 18px rgba(0,0,0,.75); opacity: 0; transition: opacity .35s; pointer-events: none; }
+  #banner.lost { color: #ffb0a6; }
+  #subbanner { position: fixed; top: calc(21% + 58px); left: 0; right: 0; text-align: center; font-size: 16px; letter-spacing: .1em; color: var(--dim); opacity: 0; transition: opacity .35s; pointer-events: none; }
+  #finalbanner { position: fixed; top: 38%; left: 0; right: 0; text-align: center; font-size: 52px; font-weight: 800; letter-spacing: .18em; color: var(--atk); text-shadow: 0 4px 24px rgba(0,0,0,.8); display: none; pointer-events: none; }
+
+  /* Plant progress */
+  #actionbar { position: fixed; left: 50%; top: 58%; transform: translateX(-50%); width: 300px; display: none; pointer-events: none; }
+  #actionlabel { text-align: center; font-size: 12px; letter-spacing: .2em; margin-bottom: 6px; color: var(--atk); }
+  #actiontrack { height: 8px; background: rgba(255,255,255,.15); border-radius: 4px; }
+  #actionfill { height: 100%; width: 0%; background: var(--atk); border-radius: 4px; }
+
+  /* Buy menu */
+  #buymenu { position: fixed; left: 22px; top: 50%; transform: translateY(-50%); width: 348px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: none; backdrop-filter: blur(3px); }
+  #buymenu h2 { margin: 2px 4px 10px; font-size: 14px; letter-spacing: .2em; color: var(--dim); font-weight: 600; }
+  .buyitem { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; background: rgba(255,255,255,.05); color: var(--ink); border: 1px solid transparent; border-radius: 5px; padding: 7px 9px; margin-bottom: 5px; cursor: pointer; font-family: var(--font-ui); font-size: 13.5px; }
+  .buyitem:hover { border-color: var(--atk); }
+  .buyitem.cant { opacity: .42; }
+  .buyitem .bkey { font-family: var(--font-num); color: var(--atk); border: 1px solid var(--line); border-radius: 3px; padding: 0 5px; }
+  .buyitem .bname { font-weight: 600; }
+  .buyitem .bhint { color: var(--dim); font-size: 11.5px; flex: 1; }
+  .buyitem .bprice { font-family: var(--font-num); color: #9fe870; }
+
+  /* Scoreboard */
+  #scoreboard { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 560px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px 20px; display: none; backdrop-filter: blur(3px); pointer-events: none; }
+  #scoreboard h2 { margin: 0 0 10px; font-size: 15px; letter-spacing: .24em; text-align: center; color: var(--dim); }
+  #scoretable { width: 100%; border-collapse: collapse; font-size: 14px; }
+  #scoretable td { padding: 5px 8px; border-bottom: 1px solid rgba(159,180,189,.14); font-family: var(--font-num); }
+  #scoretable td:first-child { font-family: var(--font-ui); font-weight: 600; }
+  #scoretable tr.atk td:first-child { color: var(--atk); }
+  #scoretable tr.def td:first-child { color: var(--def); }
+  #scoretable tr.me { background: rgba(255,255,255,.07); }
+
+  /* Overlays */
+  #damageflash { position: fixed; inset: 0; background: radial-gradient(ellipse at center, transparent 42%, rgba(200,30,20,.5) 100%); opacity: 0; transition: opacity .13s; pointer-events: none; }
+  #scope { position: fixed; inset: 0; background: radial-gradient(circle at center, transparent 30%, rgba(0,0,0,.92) 31%); display: none; pointer-events: none; }
+  #locktip { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(5, 10, 13, .72); text-align: center; cursor: pointer; z-index: 5; }
+  #locktip h1 { font-size: 54px; letter-spacing: .3em; margin: 0 0 4px; color: var(--ink); }
+  #locktip h1 span { color: var(--atk); }
+  #locktip p { color: var(--dim); margin: 5px 0; font-size: 15px; letter-spacing: .06em; }
+  #locktip .keys { margin-top: 14px; font-family: var(--font-num); font-size: 13px; color: var(--dim); line-height: 1.9; }
+  #locktip .go { margin-top: 20px; font-size: 17px; color: var(--atk); letter-spacing: .24em; animation: pulse 1.6s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+</style>
+</head>
+<body>
+<div id="game"></div>
+
+<div id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
+<div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+
+<div id="topbar">
+  <div class="side atk"><div class="tname">SLUICE RUNNERS</div><div class="tscore" id="scorea">0</div><div class="pips" id="alivea">●●●●●</div></div>
+  <div class="mid"><div id="timer">0:12</div><div id="roundno">ROUND 1 · FIRST TO 7</div></div>
+  <div class="side def"><div class="tname">DAM WARDENS</div><div class="tscore" id="scoreb">0</div><div class="pips" id="aliveb">●●●●●</div></div>
+</div>
+
+<div id="radarbox">
+  <canvas id="radar" width="168" height="98"></canvas>
+  <div class="tag" id="carriertag">⚠ YOU CARRY THE CHARGE — PLANT AT A SITE (HOLD E)</div>
+  <div class="tag" id="plantedtag">⚠ CHARGE PLANTED</div>
+</div>
+
+<div id="killfeed"></div>
+
+<div id="vitals">
+  <div id="health">100</div>
+  <div id="armorwrap"><div id="armorbar"></div></div>
+  <div id="vitlabel">RUNNER · MERIDIAN DAM</div>
+</div>
+
+<div id="weaponbox">
+  <div id="money">$800</div>
+  <div id="ammoline"><span id="ammo">12</span><span id="reserve">/ 48</span></div>
+  <div id="weaponname">P9 GULL</div>
+</div>
+
+<div id="banner"></div>
+<div id="subbanner"></div>
+<div id="finalbanner"></div>
+
+<div id="actionbar"><div id="actionlabel">PLANTING THE CHARGE</div><div id="actiontrack"><div id="actionfill"></div></div></div>
+
+<div id="buymenu">
+  <h2>SUPPLY CRATE — BUY (B)</h2>
+  <div id="buylist"></div>
+</div>
+
+<div id="scoreboard">
+  <h2>SPILLWAY — SCOREBOARD</h2>
+  <table id="scoretable"></table>
+</div>
+
+<div id="scope"></div>
+<div id="damageflash"></div>
+
+<div id="locktip">
+  <h1>SPILL<span>WAY</span></h1>
+  <p>Tactical breach at Meridian Dam — Sluice Runners vs Dam Wardens.</p>
+  <p>Plant the charge at site A (Turbine Hall) or B (Gantry Crane). First to 7 rounds.</p>
+  <div class="keys">
+    WASD move · Mouse aim · Click fire · R reload · Ctrl crouch · Space jump<br>
+    1/2 weapons · 3 frag · 4 smoke · E plant · B buy · Tab scores · Right-click DMR scope
+  </div>
+  <div class="go">CLICK TO PLAY</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.min.js"
+  }
+}
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
