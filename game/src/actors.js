@@ -48,6 +48,10 @@ export function createActor(team, isPlayer, name, x, z, yaw) {
 // A readable soldier from boxes: legs that swing, a torso in team
 // colours, a helmet with a glowing visor slit, and the held weapon as a
 // dark block. The visor faces -Z, the direction the mesh looks.
+//
+// Each body part is one row: [key, w, h, d, material, x, y, z].
+// Legs get their geometry pivoted at the hip afterwards so the swing
+// rotates around the top of the leg.
 function buildActorMesh(team) {
   const c = TEAM_COLORS[team];
   const suit = new THREE.MeshStandardMaterial({ color: c.suit, roughness: 0.85 });
@@ -56,29 +60,34 @@ function buildActorMesh(team) {
   });
   const dark = new THREE.MeshStandardMaterial({ color: 0x23282c, roughness: 0.7 });
   const skin = new THREE.MeshStandardMaterial({ color: c.skin, roughness: 0.8 });
+  const mats = { suit, trim, dark, skin };
+  const PARTS = [
+    ['legL', 0.17, 0.78, 0.2, 'dark', -0.13, 0.39, 0],
+    ['legR', 0.17, 0.78, 0.2, 'dark', 0.13, 0.39, 0],
+    ['torso', 0.52, 0.62, 0.3, 'suit', 0, 1.09, 0],
+    ['chestStrip', 0.54, 0.1, 0.32, 'trim', 0, 1.32, 0],
+    ['armL', 0.13, 0.55, 0.15, 'suit', -0.34, 1.12, -0.05],
+    ['armR', 0.13, 0.55, 0.15, 'suit', 0.34, 1.12, -0.05],
+    ['head', 0.3, 0.3, 0.3, 'skin', 0, 1.56, 0],
+    ['helmet', 0.34, 0.14, 0.34, 'dark', 0, 1.7, 0],
+    ['visor', 0.26, 0.05, 0.02, 'trim', 0, 1.58, -0.16],
+    ['gun', 0.09, 0.16, 0.78, 'dark', 0.22, 1.18, -0.42],
+  ];
   const g = new THREE.Group();
-  const box = (w, h, d, mat, x, y, z) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  const parts = { suit, trim };
+  for (const [key, w, h, d, mat, x, y, z] of PARTS) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mats[mat]);
     m.position.set(x, y, z);
     m.castShadow = true;
     g.add(m);
-    return m;
-  };
-  const legL = box(0.17, 0.78, 0.2, dark, -0.13, 0.39, 0);
-  const legR = box(0.17, 0.78, 0.2, dark, 0.13, 0.39, 0);
-  legL.geometry.translate(0, -0.3, 0);
-  legL.position.y = 0.69;
-  legR.geometry.translate(0, -0.3, 0);
-  legR.position.y = 0.69;
-  const torso = box(0.52, 0.62, 0.3, suit, 0, 1.09, 0);
-  box(0.54, 0.1, 0.32, trim, 0, 1.32, 0); // chest light strip
-  const armL = box(0.13, 0.55, 0.15, suit, -0.34, 1.12, -0.05);
-  const armR = box(0.13, 0.55, 0.15, suit, 0.34, 1.12, -0.05);
-  const head = box(0.3, 0.3, 0.3, skin, 0, 1.56, 0);
-  box(0.34, 0.14, 0.34, dark, 0, 1.7, 0); // helmet
-  box(0.26, 0.05, 0.02, trim, 0, 1.58, -0.16); // visor slit
-  const gun = box(0.09, 0.16, 0.78, dark, 0.22, 1.18, -0.42);
-  return { group: g, parts: { legL, legR, armL, armR, torso, head, gun, suit, trim } };
+    parts[key] = m;
+  }
+  // Pivot the legs at the hip: drop the geometry, raise the mesh.
+  for (const leg of [parts.legL, parts.legR]) {
+    leg.geometry.translate(0, -0.3, 0);
+    leg.position.y = 0.69;
+  }
+  return { group: g, parts };
 }
 
 export function resetActorForRound(a, x, z, yaw) {
@@ -136,13 +145,12 @@ export function applyDamage(target, dmg, head, attacker, weaponKey) {
 }
 
 const GRAV = 22, ACCEL = 42, FRICTION = 9;
+const JUMP_VEL = 7.6, MAX_AIR_SPEED = 7.5;
 
-// One fixed step of body movement: the wish direction + speed come from
-// the player controller or a bot brain; this integrates, collides and
-// animates.
-export function stepMovement(a, dt) {
+// Accelerate toward the wish velocity on the ground; weaker air control.
+// Ground friction drags the body to a stop when there is no wish.
+function integrateHorizontal(a, dt) {
   const maxSpeed = a.wishSpeed * (a.crouch ? 0.45 : 1);
-  // Accelerate toward the wish velocity on the ground; weaker air control.
   const k = a.grounded ? ACCEL : ACCEL * 0.18;
   a.vel.x += a.wishX * k * dt;
   a.vel.z += a.wishZ * k * dt;
@@ -156,12 +164,14 @@ export function stepMovement(a, dt) {
       a.vel.x *= maxSpeed / sp2;
       a.vel.z *= maxSpeed / sp2;
     }
-  } else if (sp > 7.5) {
-    a.vel.x *= 7.5 / sp;
-    a.vel.z *= 7.5 / sp;
+  } else if (sp > MAX_AIR_SPEED) {
+    a.vel.x *= MAX_AIR_SPEED / sp;
+    a.vel.z *= MAX_AIR_SPEED / sp;
   }
+}
 
-  if (a.wishJump && a.grounded) { a.vel.y = 7.6; a.grounded = false; }
+function integrateVertical(a, dt) {
+  if (a.wishJump && a.grounded) { a.vel.y = JUMP_VEL; a.grounded = false; }
   a.wishJump = false;
   a.vel.y -= GRAV * dt;
   a.pos.x += a.vel.x * dt;
@@ -169,8 +179,10 @@ export function stepMovement(a, dt) {
   a.pos.y += a.vel.y * dt;
   if (a.pos.y <= 0) { a.pos.y = 0; a.vel.y = 0; a.grounded = true; }
   moveCollide(a.pos, 0.36);
+}
 
-  // Footsteps: distance-based, so sprinting is loud and crouch-walking quiet.
+// Footsteps: distance-based, so sprinting is loud and crouch-walking quiet.
+function tickFootsteps(a, dt) {
   const hs = Math.hypot(a.vel.x, a.vel.z);
   if (a.grounded && hs > 0.6) {
     a.stepAcc += hs * dt;
@@ -185,6 +197,15 @@ export function stepMovement(a, dt) {
   a.heightCur += (targetH - a.heightCur) * Math.min(1, dt * 10);
   a.hitFlash = Math.max(0, a.hitFlash - dt * 5);
   if (!a.alive) a.deathT += dt;
+}
+
+// One fixed step of body movement: the wish direction + speed come from
+// the player controller or a bot brain; this integrates, collides and
+// animates.
+export function stepMovement(a, dt) {
+  integrateHorizontal(a, dt);
+  integrateVertical(a, dt);
+  tickFootsteps(a, dt);
 }
 
 // Pose the mesh from the simulation state (render-side, after steps).

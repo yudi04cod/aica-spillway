@@ -7,6 +7,7 @@ import * as THREE from 'three';
 
 const MAX_TRACERS = 96;
 const MAX_PARTICLES = 900;
+const MAX_FLASHES = 12;
 
 let scene = null;
 let tracerGeo, tracerPos, tracerCol, tracerLife;
@@ -14,9 +15,8 @@ let points, pPos, pVel, pLife, pMaxLife, pCol;
 const flashes = []; // {mesh, t, grow?, temp?}
 const smokes = []; // {mesh, t, dur, r, x, y, z}
 
-export function initFx(s) {
-  scene = s;
-  // Tracers live in one LineSegments with per-vertex colours.
+// Tracers live in one LineSegments with per-vertex colours.
+function initTracers() {
   tracerPos = new Float32Array(MAX_TRACERS * 6);
   tracerCol = new Float32Array(MAX_TRACERS * 6);
   tracerLife = new Float32Array(MAX_TRACERS);
@@ -27,8 +27,10 @@ export function initFx(s) {
     new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 }));
   lines.frustumCulled = false;
   scene.add(lines);
+}
 
-  // Particles live in one Points cloud.
+// Particles live in one Points cloud, parked below the floor when dead.
+function initParticles() {
   pPos = new Float32Array(MAX_PARTICLES * 3);
   pVel = new Float32Array(MAX_PARTICLES * 3);
   pLife = new Float32Array(MAX_PARTICLES);
@@ -44,18 +46,27 @@ export function initFx(s) {
   points.frustumCulled = false;
   scene.add(points);
   for (let i = 0; i < MAX_PARTICLES; i++) pPos[i * 3 + 1] = -50;
+}
 
-  // Muzzle flash sprites (additive quads) — a small pool of meshes.
+// Muzzle flash sprites (additive quads) — a small pool of meshes.
+function initFlashes() {
   const flashMat = new THREE.MeshBasicMaterial({
     color: 0xffc46b, transparent: true, opacity: 0.95,
     blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
   });
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < MAX_FLASHES; i++) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.55), flashMat.clone());
     m.visible = false;
     scene.add(m);
     flashes.push({ mesh: m, t: 0 });
   }
+}
+
+export function initFx(s) {
+  scene = s;
+  initTracers();
+  initParticles();
+  initFlashes();
 }
 
 let tracerCursor = 0;
@@ -103,9 +114,7 @@ export function muzzle(x, y, z, yaw, pitch) {
   }
 }
 
-export function explosionFx(x, y, z, big) {
-  burst(x, y + 0.5, z, big ? 90 : 40, 1, 0.55, 0.15, big ? 13 : 8, 0.9);
-  burst(x, y + 0.5, z, big ? 50 : 20, 0.5, 0.45, 0.4, 6, 1.4);
+function fireball(x, y, z, big) {
   const flash = new THREE.Mesh(new THREE.SphereGeometry(big ? 3.4 : 1.8, 14, 10),
     new THREE.MeshBasicMaterial({
       color: 0xffa63e, transparent: true, opacity: 0.85,
@@ -114,6 +123,12 @@ export function explosionFx(x, y, z, big) {
   flash.position.set(x, y + 0.6, z);
   scene.add(flash);
   flashes.push({ mesh: flash, t: big ? 0.5 : 0.3, grow: big ? 14 : 8, temp: true });
+}
+
+export function explosionFx(x, y, z, big) {
+  burst(x, y + 0.5, z, big ? 90 : 40, 1, 0.55, 0.15, big ? 13 : 8, 0.9);
+  burst(x, y + 0.5, z, big ? 50 : 20, 0.5, 0.45, 0.4, 6, 1.4);
+  fireball(x, y, z, big);
 }
 
 const smokeGeo = new THREE.SphereGeometry(1, 14, 10);
@@ -143,7 +158,7 @@ export function smokeBlocks(ax, ay, az, bx, by, bz) {
   return false;
 }
 
-export function updateFx(dt) {
+function updateTracers(dt) {
   for (let i = 0; i < MAX_TRACERS; i++) {
     if (tracerLife[i] <= 0) continue;
     tracerLife[i] -= dt;
@@ -153,6 +168,9 @@ export function updateFx(dt) {
       tracerGeo.attributes.position.needsUpdate = true;
     }
   }
+}
+
+function updateParticles(dt) {
   for (let i = 0; i < MAX_PARTICLES; i++) {
     if (pLife[i] <= 0) continue;
     pLife[i] -= dt;
@@ -167,6 +185,9 @@ export function updateFx(dt) {
     }
   }
   points.geometry.attributes.position.needsUpdate = true;
+}
+
+function updateFlashes(dt) {
   for (let i = flashes.length - 1; i >= 0; i--) {
     const f = flashes[i];
     if (f.t <= 0) continue;
@@ -178,6 +199,9 @@ export function updateFx(dt) {
       if (f.temp) { scene.remove(f.mesh); flashes.splice(i, 1); }
     }
   }
+}
+
+function updateSmokes(dt) {
   for (let i = smokes.length - 1; i >= 0; i--) {
     const s = smokes[i];
     s.t += dt;
@@ -187,6 +211,13 @@ export function updateFx(dt) {
     s.mesh.position.y = 1.6 + Math.sin(s.t * 0.7) * 0.15;
     if (s.t >= s.dur) { scene.remove(s.mesh); smokes.splice(i, 1); }
   }
+}
+
+export function updateFx(dt) {
+  updateTracers(dt);
+  updateParticles(dt);
+  updateFlashes(dt);
+  updateSmokes(dt);
 }
 
 export function clearTransientFx() {

@@ -23,8 +23,8 @@ const SHOT = params.get('shot');
 const TEST = params.has('test');
 
 // A seeded RNG makes staged screenshots and soak tests reproducible.
-if (params.has('seed')) {
-  let s = (parseInt(params.get('seed'), 10) || 1) >>> 0;
+function installSeededRng(seedParam) {
+  let s = (parseInt(seedParam, 10) || 1) >>> 0;
   Math.random = () => {
     s = (s + 0x6D2B79F5) >>> 0;
     let t = s;
@@ -33,16 +33,21 @@ if (params.has('seed')) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+if (params.has('seed')) installSeededRng(params.get('seed'));
 
-const canvasHost = document.getElementById('game');
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFShadowMap;
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-canvasHost.appendChild(renderer.domElement);
+function buildRenderer() {
+  const host = document.getElementById('game');
+  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  host.appendChild(renderer.domElement);
+  return renderer;
+}
 
+const renderer = buildRenderer();
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(74, window.innerWidth / window.innerHeight, 0.08, 400);
 scene.add(camera);
@@ -67,23 +72,30 @@ window.addEventListener('resize', () => {
 
 // ---- simulation step ---------------------------------------------------------
 
-function step(dt) {
-  state.time += dt;
-  updatePlayer(dt);
-  const active = !state.freeze && (state.phase === PHASE.LIVE || state.phase === PHASE.PLANTED);
+function stepBots(dt, active) {
   for (const a of state.actors) {
     if (a.bot && a.alive && active) updateBot(a, dt);
     else if (a.bot) { a.wishSpeed = 0; a.wishX = 0; a.wishZ = 0; }
   }
   if (TEST && state.player.brain) updateBot(state.player, dt);
+}
+
+function stepBodies(dt) {
   for (const a of state.actors) {
-    if (a.alive) {
-      stepMovement(a, dt);
-      updateWeapon(a);
-      const w = currentWeapon(a);
-      if (w && w.ammo === 0 && w.reloadEnd === 0) startReload(a);
-    }
+    if (!a.alive) continue;
+    stepMovement(a, dt);
+    updateWeapon(a);
+    const w = currentWeapon(a);
+    if (w && w.ammo === 0 && w.reloadEnd === 0) startReload(a);
   }
+}
+
+function step(dt) {
+  state.time += dt;
+  updatePlayer(dt);
+  const active = !state.freeze && (state.phase === PHASE.LIVE || state.phase === PHASE.PLANTED);
+  stepBots(dt, active);
+  stepBodies(dt);
   updateGrenades(dt, applyDamage);
   updateRounds(dt);
 }
@@ -96,9 +108,8 @@ const stats = {
   kills: 0, headKills: 0, shots: 0, plants: 0, defuses: 0,
   roundsEnded: 0, lastWhy: '', trail: [],
 };
-if (TEST) {
-  state.player.brain = newBrain();
-  state.player.brain.role = 'escort';
+
+function registerTestCounters() {
   on('kill', (e) => {
     killCount++;
     stats.kills++;
@@ -114,6 +125,9 @@ if (TEST) {
     stats.whys = stats.whys || {};
     stats.whys[e.why] = (stats.whys[e.why] || 0) + 1;
   });
+}
+
+function registerTestSampler() {
   window.__stats = stats;
   let lastLog = 0, lastTrail = 0;
   setInterval(() => {
@@ -140,44 +154,67 @@ if (TEST) {
   window.__testReady = true;
 }
 
+if (TEST) {
+  state.player.brain = newBrain();
+  state.player.brain.role = 'escort';
+  registerTestCounters();
+  registerTestSampler();
+}
+
 // Staged compositions for the screenshots: fixed positions, a live
 // round, and (for play/fight) the player firing in bursts.
+function placeActor(a, x, z, yaw) {
+  a.pos.set(x, 0, z);
+  a.yaw = yaw;
+  a.vel.set(0, 0, 0);
+}
+
+function stageStart(p, atk) {
+  placeActor(p, -42, 1, -Math.PI / 2);
+  placeActor(atk[0], -40, -2, -Math.PI / 2);
+  placeActor(atk[1], -39, 4, -Math.PI / 2);
+}
+
+function stagePlay(p, atk, def) {
+  placeActor(p, -10, -13, -Math.PI / 2);
+  p.inv.primary = makeWeapon('vk47');
+  p.cur = 'primary';
+  placeActor(def[0], 6, -12.5, Math.PI / 2);
+  def[0].brain.enemy = p;
+  def[0].brain.seenT = state.time;
+  placeActor(atk[0], -5, -9, -Math.PI / 2);
+  setTestScript(() => ({ f: 0, s: 0, jump: false, fire: state.tick % 50 < 26 }));
+}
+
+function stageFight(p, atk, def) {
+  placeActor(p, 27, -23.5, -Math.PI / 2);
+  placeActor(def[1], 35, -19.5, Math.PI / 2);
+  def[1].brain.enemy = p;
+  def[1].brain.seenT = state.time;
+  placeActor(atk[1], 23, -20, -Math.PI / 2);
+  placeActor(def[2], 40, -24, Math.PI);
+  setTestScript(() => ({ f: 0, s: 0, jump: false, fire: state.tick % 44 < 20 }));
+}
+
+function stageEnd(p) {
+  placeActor(p, 28, -23, -Math.PI / 2);
+  state.score = [6, 4];
+  state.round = 11;
+  window.__forceScore = true;
+  emit('roundwin', { won: true, winner: 0, why: 'elimination' });
+}
+
 function stageShot() {
   const p = state.player;
   state.phase = PHASE.LIVE;
   state.phaseT = 92;
   state.freeze = false;
-  const place = (a, x, z, yaw) => { a.pos.set(x, 0, z); a.yaw = yaw; a.vel.set(0, 0, 0); };
   const def = state.actors.filter((a) => a.team === TEAM.DEF);
   const atk = state.actors.filter((a) => a.team === TEAM.ATK && a.bot);
-  if (SHOT === 'start') {
-    place(p, -42, 1, -Math.PI / 2);
-    place(atk[0], -40, -2, -Math.PI / 2);
-    place(atk[1], -39, 4, -Math.PI / 2);
-  } else if (SHOT === 'play') {
-    place(p, -10, -13, -Math.PI / 2);
-    p.inv.primary = makeWeapon('vk47');
-    p.cur = 'primary';
-    place(def[0], 6, -12.5, Math.PI / 2);
-    def[0].brain.enemy = p;
-    def[0].brain.seenT = state.time;
-    place(atk[0], -5, -9, -Math.PI / 2);
-    setTestScript(() => ({ f: 0, s: 0, jump: false, fire: state.tick % 50 < 26 }));
-  } else if (SHOT === 'fight') {
-    place(p, 27, -23.5, -Math.PI / 2);
-    place(def[1], 35, -19.5, Math.PI / 2);
-    def[1].brain.enemy = p;
-    def[1].brain.seenT = state.time;
-    place(atk[1], 23, -20, -Math.PI / 2);
-    place(def[2], 40, -24, Math.PI);
-    setTestScript(() => ({ f: 0, s: 0, jump: false, fire: state.tick % 44 < 20 }));
-  } else if (SHOT === 'end') {
-    place(p, 28, -23, -Math.PI / 2);
-    state.score = [6, 4];
-    state.round = 11;
-    window.__forceScore = true;
-    emit('roundwin', { won: true, winner: 0, why: 'elimination' });
-  }
+  if (SHOT === 'start') stageStart(p, atk);
+  else if (SHOT === 'play') stagePlay(p, atk, def);
+  else if (SHOT === 'fight') stageFight(p, atk, def);
+  else if (SHOT === 'end') stageEnd(p);
   window.__staged = true;
 }
 if (SHOT) setTimeout(stageShot, 350);
@@ -185,6 +222,19 @@ if (SHOT) setTimeout(stageShot, 350);
 // ---- frame loop ------------------------------------------------------------------
 
 let last = performance.now(), acc = 0, frameCount = 0;
+
+function renderFrame(dt) {
+  for (const a of state.actors) animateActor(a);
+  if (state.player && !state.player.alive) poseSpectator();
+  else poseCamera(camera, dt);
+  world.update(dt);
+  updateFx(dt);
+  if (state.player) setListener(state.player.pos.x, state.player.pos.z, state.player.yaw);
+  updateHud();
+  endFrame();
+  renderer.render(scene, camera);
+}
+
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.1, (now - last) / 1000);
@@ -202,15 +252,7 @@ function frame(now) {
   if (guard >= maxSteps) acc = 0;
   frameCount++;
   if (TEST && frameCount % 8 !== 0) { endFrame(); return; } // soak tests: render sparsely
-  for (const a of state.actors) animateActor(a);
-  if (state.player && !state.player.alive) poseSpectator();
-  else poseCamera(camera, dt);
-  world.update(dt);
-  updateFx(dt);
-  if (state.player) setListener(state.player.pos.x, state.player.pos.z, state.player.yaw);
-  updateHud();
-  endFrame();
-  renderer.render(scene, camera);
+  renderFrame(dt);
 }
 
 // After death: watch from the first living teammate's shoulder.

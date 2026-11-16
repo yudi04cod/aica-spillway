@@ -1,71 +1,96 @@
-// map.js — SPILLWAY: the Meridian Dam at dusk.
+// map.js — the Meridian Dam at dusk, as data plus queries.
 //
-// One table of boxes is both the collision world and the building list,
-// so the geometry you see is exactly the geometry bullets and bodies
-// collide with. Three lanes run west -> east across the dam: the crest
-// road (north), the spillway channel and its aprons (mid), and the
-// service road into the turbine hall (south).
+// SPILLWAY's whole world is one table of axis-aligned boxes. The table
+// is the collision world and also the building list, so what you see is
+// exactly what bullets and bodies collide with. Three lanes run west to
+// east: the crest road (north), the spillway channel with its aprons
+// (middle), and the service road into the turbine hall (south).
 //
 // Sites: A = Turbine Hall (south-east interior), B = Gantry Crane (crest).
+// The playfield is x -48..48, z -28..28, ringed by 5 m perimeter concrete.
 
 import * as THREE from 'three';
 import { state } from './state.js';
 
-// Footprint x0,z0 -> x1,z1, height h, texture key. The playfield is
-// x -48..48, z -28..28, ringed by 5 m perimeter concrete.
-const BOXES = [
-  // Perimeter walls.
-  [-48, -28.6, 48, -28, 5, 'conc'], [-48, 28, 48, 28.6, 5, 'conc'],
-  [-48.6, -28, -48, 28, 5, 'conc'], [48, -28, 48.6, 28, 5, 'conc'],
+// One box: footprint x0,z0 -> x1,z1, height h, texture key. Sections are
+// kept separate so a lane can be read (and edited) on its own; BOXES is
+// the concatenation the collision code walks.
+const b = (x0, z0, x1, z1, h, mat) => ({ x0, z0, x1, z1, h, mat });
 
-  // Crest road south railing (low cover); gaps at the pier stairs,
-  // control-building doors and the NE stairs down to the control yard.
-  [-47, -19, -36, -18.4, 1.15, 'hazard'], [-32, -19, 8, -18.4, 1.15, 'hazard'],
-  [30, -19, 47, -18.4, 1.15, 'hazard'],
+const PERIMETER = [
+  b(-48, -28.6, 48, -28, 5, 'conc'), b(-48, 28, 48, 28.6, 5, 'conc'),
+  b(-48.6, -28, -48, 28, 5, 'conc'), b(48, -28, 48.6, 28, 5, 'conc'),
+];
 
-  // Control building (h 3.6): north wall two doors, south wall one door.
-  [8, -19.6, 11, -19, 3.6, 'dark'], [13.5, -19.6, 18.5, -19, 3.6, 'dark'],
-  [21, -19.6, 24, -19, 3.6, 'dark'],
-  [8, -10.6, 14, -10, 3.6, 'dark'], [18, -10.6, 24, -10, 3.6, 'dark'],
-  [8, -19, 8.6, -10, 3.6, 'dark'], [23.4, -19, 24, -10, 3.6, 'dark'],
-  [11, -15.2, 14, -14.2, 1.15, 'plate'], [18, -15.2, 21, -14.2, 1.15, 'plate'],
+// Crest road south railing (low cover). Gaps at the pier stairs, the
+// control-building doors and the NE stairs down to the control yard.
+const CREST_RAIL = [
+  b(-47, -19, -36, -18.4, 1.15, 'hazard'), b(-32, -19, 8, -18.4, 1.15, 'hazard'),
+  b(30, -19, 47, -18.4, 1.15, 'hazard'),
+];
 
-  // Spillway channel edge barriers (low), open at the three crossings.
-  [-6.6, -19, -6, -16, 1.15, 'hazard'], [-6.6, -12, -6, 10, 1.15, 'hazard'],
-  [-6.6, 14, -6, 20, 1.15, 'hazard'], [-6.6, 24, -6, 28, 1.15, 'hazard'],
-  [4, -19, 4.6, -16, 1.15, 'hazard'], [4, -12, 4.6, 10, 1.15, 'hazard'],
-  [4, 14, 4.6, 20, 1.15, 'hazard'], [4, 24, 4.6, 28, 1.15, 'hazard'],
+// Control building (h 3.6): north wall two doors, south wall one door.
+const CONTROL_BUILDING = [
+  b(8, -19.6, 11, -19, 3.6, 'dark'), b(13.5, -19.6, 18.5, -19, 3.6, 'dark'),
+  b(21, -19.6, 24, -19, 3.6, 'dark'),
+  b(8, -10.6, 14, -10, 3.6, 'dark'), b(18, -10.6, 24, -10, 3.6, 'dark'),
+  b(8, -19, 8.6, -10, 3.6, 'dark'), b(23.4, -19, 24, -10, 3.6, 'dark'),
+  b(11, -15.2, 14, -14.2, 1.15, 'plate'), b(18, -15.2, 21, -14.2, 1.15, 'plate'),
+];
 
-  // Turbine hall (h 6): north door x22..27, west door z14..19.
-  [10, 7.4, 22, 8, 6, 'conc'], [27, 7.4, 44, 8, 6, 'conc'],
-  [10, 26.4, 44, 27, 6, 'conc'],
-  [10, 8, 10.6, 14, 6, 'conc'], [10, 19, 10.6, 26.4, 6, 'conc'],
-  [43.4, 8, 44, 26.4, 6, 'conc'],
-  // The three turbines (square colliders under round shells).
-  [15, 15, 21, 21, 3.2, 'plate'], [25, 15, 31, 21, 3.2, 'plate'],
-  [35, 15, 41, 21, 3.2, 'plate'],
+// Spillway channel edge barriers (low), open at the three crossings.
+const CHANNEL = [
+  b(-6.6, -19, -6, -16, 1.15, 'hazard'), b(-6.6, -12, -6, 10, 1.15, 'hazard'),
+  b(-6.6, 14, -6, 20, 1.15, 'hazard'), b(-6.6, 24, -6, 28, 1.15, 'hazard'),
+  b(4, -19, 4.6, -16, 1.15, 'hazard'), b(4, -12, 4.6, 10, 1.15, 'hazard'),
+  b(4, 14, 4.6, 20, 1.15, 'hazard'), b(4, 24, 4.6, 28, 1.15, 'hazard'),
+];
+
+// Turbine hall (h 6): north door x22..27, west door z14..19.
+// The three turbines use square colliders under round shells.
+const TURBINE_HALL = [
+  b(10, 7.4, 22, 8, 6, 'conc'), b(27, 7.4, 44, 8, 6, 'conc'),
+  b(10, 26.4, 44, 27, 6, 'conc'),
+  b(10, 8, 10.6, 14, 6, 'conc'), b(10, 19, 10.6, 26.4, 6, 'conc'),
+  b(43.4, 8, 44, 26.4, 6, 'conc'),
+  b(15, 15, 21, 21, 3.2, 'plate'), b(25, 15, 31, 21, 3.2, 'plate'),
+  b(35, 15, 41, 21, 3.2, 'plate'),
   // Hall cover: crate stack, pipe run, sandbags by site A.
-  [12.4, 22, 14.4, 24, 2.4, 'timber'], [30, 8.6, 36, 9.2, 1.15, 'hazard'],
-  [39, 10.4, 42, 11, 1.15, 'hazard'], [16, 10, 17, 13, 1.15, 'rust'],
+  b(12.4, 22, 14.4, 24, 2.4, 'timber'), b(30, 8.6, 36, 9.2, 1.15, 'hazard'),
+  b(39, 10.4, 42, 11, 1.15, 'hazard'), b(16, 10, 17, 13, 1.15, 'rust'),
+];
 
-  // West works yard cover.
-  [-28, -2, -24, 0, 1.15, 'plate'], [-18, 8, -14, 10, 2.2, 'rust'],
-  [-30, 12, -28, 14, 1.2, 'timber'], [-14, -12, -12, -10, 1.2, 'timber'],
-  [-45, -6, -40, -4, 1.15, 'plate'], [-40, 6, -38, 8, 1.2, 'timber'],
+// West works yard cover.
+const WEST_YARD = [
+  b(-28, -2, -24, 0, 1.15, 'plate'), b(-18, 8, -14, 10, 2.2, 'rust'),
+  b(-30, 12, -28, 14, 1.2, 'timber'), b(-14, -12, -12, -10, 1.2, 'timber'),
+  b(-45, -6, -40, -4, 1.15, 'plate'), b(-40, 6, -38, 8, 1.2, 'timber'),
+];
 
-  // East apron + defender yard cover.
-  [16, 4, 21, 6.4, 2.6, 'rust'], [27, -1, 30, 1, 1.3, 'timber'],
-  [20, 6.2, 24, 6.8, 1.15, 'hazard'], [36, -4, 38, -2, 2.4, 'timber'],
-  [42, 2, 45, 4, 1.2, 'timber'], [34, 6.2, 38, 6.8, 1.15, 'hazard'],
+// East apron + defender yard cover.
+const EAST_APRON = [
+  b(16, 4, 21, 6.4, 2.6, 'rust'), b(27, -1, 30, 1, 1.3, 'timber'),
+  b(20, 6.2, 24, 6.8, 1.15, 'hazard'), b(36, -4, 38, -2, 2.4, 'timber'),
+  b(42, 2, 45, 4, 1.2, 'timber'), b(34, 6.2, 38, 6.8, 1.15, 'hazard'),
+];
 
-  // Crest dressing: crates, the site B approach barrier, gantry legs.
-  [-20, -25, -18, -23, 1.2, 'timber'], [12, -26, 14, -24, 1.2, 'timber'],
-  [26, -22, 29, -21.4, 1.15, 'hazard'],
-  [33, -26.4, 34.6, -24.8, 7, 'rust'], [33, -17.2, 34.6, -15.6, 7, 'rust'],
+// Crest dressing: crates, the site B approach barrier, gantry legs.
+const CREST_DRESSING = [
+  b(-20, -25, -18, -23, 1.2, 'timber'), b(12, -26, 14, -24, 1.2, 'timber'),
+  b(26, -22, 29, -21.4, 1.15, 'hazard'),
+  b(33, -26.4, 34.6, -24.8, 7, 'rust'), b(33, -17.2, 34.6, -15.6, 7, 'rust'),
+];
 
-  // Service road dressing.
-  [-8, 25, -5, 25.6, 1.15, 'hazard'], [0, 18, 2, 20, 1.2, 'timber'],
-  [-36, 20, -33, 22, 1.2, 'timber'], [6, 24, 9, 26, 1.15, 'plate'],
+// Service road dressing.
+const SERVICE_ROAD = [
+  b(-8, 25, -5, 25.6, 1.15, 'hazard'), b(0, 18, 2, 20, 1.2, 'timber'),
+  b(-36, 20, -33, 22, 1.2, 'timber'), b(6, 24, 9, 26, 1.15, 'plate'),
+];
+
+const BOXES = [
+  ...PERIMETER, ...CREST_RAIL, ...CONTROL_BUILDING, ...CHANNEL,
+  ...TURBINE_HALL, ...WEST_YARD, ...EAST_APRON, ...CREST_DRESSING,
+  ...SERVICE_ROAD,
 ];
 
 export const SITES = {
@@ -98,7 +123,7 @@ const EDGES = [
   [4, 13], [15, 18], [23, 33], [27, 34], [34, 29], [34, 30],
 ];
 export const ADJ = NODES.map(() => []);
-for (const [a, b] of EDGES) { ADJ[a].push(b); ADJ[b].push(a); }
+for (const [a, bIdx] of EDGES) { ADJ[a].push(bIdx); ADJ[bIdx].push(a); }
 
 // Where defenders (and post-plant attackers) like to stand: position,
 // facing yaw, and the site the spot watches.
@@ -113,73 +138,77 @@ export const HOLD_SPOTS = [
   { x: 37, z: -13, yaw: -0.5, site: 'B' },
 ];
 
-export const colliders = BOXES.map(([x0, z0, x1, z1, h, mat]) => ({ x0, z0, x1, z1, h, mat }));
+export const colliders = BOXES;
+
+// Playfield clamps for a body centre (walls sit 0.6 m outside these).
+const BOUND_X = 47.4, BOUND_Z = 27.4;
 
 // ---- collision + sight queries --------------------------------------------
 
+// Push a circle (actor footprint) out of one box it overlaps, in XZ.
+function resolveBox(pos, radius, c) {
+  const nx = Math.max(c.x0, Math.min(pos.x, c.x1));
+  const nz = Math.max(c.z0, Math.min(pos.z, c.z1));
+  const dx = pos.x - nx, dz = pos.z - nz;
+  const d2 = dx * dx + dz * dz;
+  if (d2 >= radius * radius) return;
+  if (d2 < 1e-9) {
+    // Centre inside the box: leave through the nearest face.
+    const gaps = [
+      [pos.x - c.x0, () => { pos.x = c.x0 - radius; }],
+      [c.x1 - pos.x, () => { pos.x = c.x1 + radius; }],
+      [pos.z - c.z0, () => { pos.z = c.z0 - radius; }],
+      [c.z1 - pos.z, () => { pos.z = c.z1 + radius; }],
+    ];
+    let smallest = Infinity, escape = null;
+    for (const [gap, fn] of gaps) {
+      if (gap < smallest) { smallest = gap; escape = fn; }
+    }
+    escape();
+    return;
+  }
+  const d = Math.sqrt(d2), push = (radius - d) / d;
+  pos.x += dx * push;
+  pos.z += dz * push;
+}
+
 // Push a circle (actor footprint) out of every box it overlaps, in XZ.
 export function moveCollide(pos, radius) {
-  for (let i = 0; i < colliders.length; i++) {
-    const c = colliders[i];
-    const nx = Math.max(c.x0, Math.min(pos.x, c.x1));
-    const nz = Math.max(c.z0, Math.min(pos.z, c.z1));
-    let dx = pos.x - nx, dz = pos.z - nz;
-    const d2 = dx * dx + dz * dz;
-    if (d2 >= radius * radius) continue;
-    if (d2 < 1e-9) {
-      // Centre inside the box: leave through the nearest face.
-      const l = pos.x - c.x0, r = c.x1 - pos.x, t = pos.z - c.z0, b = c.z1 - pos.z;
-      const m = Math.min(l, r, t, b);
-      if (m === l) pos.x = c.x0 - radius;
-      else if (m === r) pos.x = c.x1 + radius;
-      else if (m === t) pos.z = c.z0 - radius;
-      else pos.z = c.z1 + radius;
-      continue;
-    }
-    const d = Math.sqrt(d2), push = (radius - d) / d;
-    pos.x += dx * push;
-    pos.z += dz * push;
+  for (const c of colliders) resolveBox(pos, radius, c);
+  pos.x = Math.max(-BOUND_X, Math.min(BOUND_X, pos.x));
+  pos.z = Math.max(-BOUND_Z, Math.min(BOUND_Z, pos.z));
+}
+
+// Clip the [t0, t1] interval against one slab [lo, hi] along one axis.
+// Returns the narrowed interval, or null when the ray misses the slab.
+function clipSlab(origin, dir, lo, hi, t0, t1) {
+  if (Math.abs(dir) < 1e-9) {
+    return (origin < lo || origin > hi) ? null : [t0, t1];
   }
-  pos.x = Math.max(-47.4, Math.min(47.4, pos.x));
-  pos.z = Math.max(-27.4, Math.min(27.4, pos.z));
+  let ta = (lo - origin) / dir, tb = (hi - origin) / dir;
+  if (ta > tb) { const swap = ta; ta = tb; tb = swap; }
+  const next0 = Math.max(t0, ta), next1 = Math.min(t1, tb);
+  return next0 > next1 ? null : [next0, next1];
 }
 
 // Slab test of a ray against one box (y from 0 to h). Returns t or -1.
 function rayBox(c, ox, oy, oz, dx, dy, dz, maxT) {
-  let t0 = 0, t1 = maxT;
-  // X slab
-  if (Math.abs(dx) < 1e-9) { if (ox < c.x0 || ox > c.x1) return -1; }
-  else {
-    let ta = (c.x0 - ox) / dx, tb = (c.x1 - ox) / dx;
-    if (ta > tb) { const s = ta; ta = tb; tb = s; }
-    t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
-    if (t0 > t1) return -1;
-  }
-  // Y slab (0..h)
-  if (Math.abs(dy) < 1e-9) { if (oy < 0 || oy > c.h) return -1; }
-  else {
-    let ta = (0 - oy) / dy, tb = (c.h - oy) / dy;
-    if (ta > tb) { const s = ta; ta = tb; tb = s; }
-    t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
-    if (t0 > t1) return -1;
-  }
-  // Z slab
-  if (Math.abs(dz) < 1e-9) { if (oz < c.z0 || oz > c.z1) return -1; }
-  else {
-    let ta = (c.z0 - oz) / dz, tb = (c.z1 - oz) / dz;
-    if (ta > tb) { const s = ta; ta = tb; tb = s; }
-    t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
-    if (t0 > t1) return -1;
-  }
-  return t0;
+  let span = [0, maxT];
+  span = clipSlab(ox, dx, c.x0, c.x1, span[0], span[1]);
+  if (!span) return -1;
+  span = clipSlab(oy, dy, 0, c.h, span[0], span[1]);
+  if (!span) return -1;
+  span = clipSlab(oz, dz, c.z0, c.z1, span[0], span[1]);
+  if (!span) return -1;
+  return span[0];
 }
 
 // Nearest world hit along a ray; fills `out` {t, x, y, z} and returns
 // t or -1. Also stops at the ground plane (y=0).
 export function rayWorld(ox, oy, oz, dx, dy, dz, maxDist, out) {
   let best = maxDist;
-  for (let i = 0; i < colliders.length; i++) {
-    const t = rayBox(colliders[i], ox, oy, oz, dx, dy, dz, best);
+  for (const c of colliders) {
+    const t = rayBox(c, ox, oy, oz, dx, dy, dz, best);
     if (t >= 0 && t < best) best = t;
   }
   if (dy < -1e-9) {
@@ -203,11 +232,19 @@ export function losBlocked(ax, ay, az, bx, by, bz) {
   const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
   if (len < 1e-6) return false;
   const s = 1 / len;
-  for (let i = 0; i < colliders.length; i++) {
-    const t = rayBox(colliders[i], ax, ay, az, dx * s, dy * s, dz * s, len);
+  for (const c of colliders) {
+    const t = rayBox(c, ax, ay, az, dx * s, dy * s, dz * s, len);
     if (t >= 0 && t < len - 0.05) return true;
   }
   return false;
+}
+
+// Does a box block a walking body? Full-height cover always does; a long
+// low wall (channel barrier, railing) does too. Short cover is slid
+// around by the body solver.
+function blocksWalk(c) {
+  const longWall = Math.max(c.x1 - c.x0, c.z1 - c.z0) > 5;
+  return c.h > 1.35 || (c.h > 0.9 && longWall);
 }
 
 // 2D version for steering: does the straight walk a->b cross any box
@@ -215,29 +252,15 @@ export function losBlocked(ax, ay, az, bx, by, bz) {
 // "clear" answer is really walkable.
 export function segmentBlocked2D(ax, az, bx, bz) {
   const dx = bx - ax, dz = bz - az;
-  for (let i = 0; i < colliders.length; i++) {
-    const c = colliders[i];
-    // Only full-height cover and long low walls (channel barriers,
-    // railings) count: short cover is slid around by the body solver.
-    const longWall = Math.max(c.x1 - c.x0, c.z1 - c.z0) > 5;
-    if (!(c.h > 1.35 || (c.h > 0.9 && longWall))) continue;
-    const x0 = c.x0 - 0.3, x1 = c.x1 + 0.3, z0 = c.z0 - 0.3, z1 = c.z1 + 0.3;
-    let t0 = 0, t1 = 1;
-    if (Math.abs(dx) < 1e-9) { if (ax < x0 || ax > x1) continue; }
-    else {
-      let ta = (x0 - ax) / dx, tb = (x1 - ax) / dx;
-      if (ta > tb) { const s = ta; ta = tb; tb = s; }
-      t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
-      if (t0 > t1) continue;
-    }
-    if (Math.abs(dz) < 1e-9) { if (az < z0 || az > z1) continue; }
-    else {
-      let ta = (z0 - az) / dz, tb = (z1 - az) / dz;
-      if (ta > tb) { const s = ta; ta = tb; tb = s; }
-      t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
-      if (t0 > t1) continue;
-    }
-    return true;
+  const pad = 0.3;
+  for (const c of colliders) {
+    if (!blocksWalk(c)) continue;
+    const x0 = c.x0 - pad, x1 = c.x1 + pad, z0 = c.z0 - pad, z1 = c.z1 + pad;
+    let span = [0, 1];
+    span = clipSlab(ax, dx, x0, x1, span[0], span[1]);
+    if (!span) continue;
+    span = clipSlab(az, dz, z0, z1, span[0], span[1]);
+    if (span) return true;
   }
   return false;
 }
@@ -255,35 +278,44 @@ export function nearestNode(x, z) {
 // The open list is a plain array (35 nodes); the maps are reused across
 // calls so no per-call allocation shows up in the hot loop.
 const _open = [], _came = new Map(), _gs = new Map(), _fs = new Map();
+
+function edgeLen(i, j) {
+  return Math.hypot(NODES[j][0] - NODES[i][0], NODES[j][1] - NODES[i][1]);
+}
+
+function popCheapest(open, fs) {
+  let bi = 0;
+  for (let i = 1; i < open.length; i++) {
+    if (fs.get(open[i]) < fs.get(open[bi])) bi = i;
+  }
+  return open.splice(bi, 1)[0];
+}
+
+function rebuildPath(came, goal) {
+  const path = [goal];
+  let n = goal;
+  while (came.has(n)) { n = came.get(n); path.push(n); }
+  return path.reverse();
+}
+
 export function findPath(a, b) {
   if (a === b) return [a];
   _open.length = 0;
   _came.clear(); _gs.clear(); _fs.clear();
+  const heuristic = (i) => Math.hypot(NODES[i][0] - NODES[b][0], NODES[i][1] - NODES[b][1]);
   _open.push(a);
   _gs.set(a, 0);
-  const h = (i) => Math.hypot(NODES[i][0] - NODES[b][0], NODES[i][1] - NODES[b][1]);
-  _fs.set(a, h(a));
+  _fs.set(a, heuristic(a));
   while (_open.length) {
-    let bi = 0;
-    for (let i = 1; i < _open.length; i++) {
-      if (_fs.get(_open[i]) < _fs.get(_open[bi])) bi = i;
-    }
-    const cur = _open.splice(bi, 1)[0];
-    if (cur === b) {
-      const path = [cur];
-      let n = cur;
-      while (_came.has(n)) { n = _came.get(n); path.push(n); }
-      return path.reverse();
-    }
+    const cur = popCheapest(_open, _fs);
+    if (cur === b) return rebuildPath(_came, cur);
     for (const nb of ADJ[cur]) {
-      const g = _gs.get(cur) +
-        Math.hypot(NODES[nb][0] - NODES[cur][0], NODES[nb][1] - NODES[cur][1]);
-      if (g < (_gs.get(nb) ?? Infinity)) {
-        _came.set(nb, cur);
-        _gs.set(nb, g);
-        _fs.set(nb, g + h(nb));
-        if (!_open.includes(nb)) _open.push(nb);
-      }
+      const g = _gs.get(cur) + edgeLen(cur, nb);
+      if (g >= (_gs.get(nb) ?? Infinity)) continue;
+      _came.set(nb, cur);
+      _gs.set(nb, g);
+      _fs.set(nb, g + heuristic(nb));
+      if (!_open.includes(nb)) _open.push(nb);
     }
   }
   return [a];
@@ -305,102 +337,102 @@ const MAT_FOR = {
   timber: 'timber',
 };
 
-export function buildWorld(scene, tex) {
+const MATERIAL_KEYS = ['concrete', 'concreteDark', 'plate', 'plateRust', 'hazard', 'timber', 'asphalt'];
+
+function makeMaterials(tex) {
   const mats = {};
-  for (const key of ['concrete', 'concreteDark', 'plate', 'plateRust', 'hazard', 'timber', 'asphalt']) {
+  for (const key of MATERIAL_KEYS) {
     mats[key] = new THREE.MeshStandardMaterial({ map: tex[key], roughness: 0.92, metalness: 0.05 });
   }
   mats.plate.metalness = 0.45;
   mats.plateRust.metalness = 0.3;
+  return mats;
+}
 
-  const world = new THREE.Group();
-  scene.add(world);
-  const unitBox = new THREE.BoxGeometry(1, 1, 1);
-  const addBox = (x0, z0, x1, z1, h, mat, y0 = 0) => {
-    const m = new THREE.Mesh(unitBox, mats[mat]);
-    m.scale.set(x1 - x0, h, z1 - z0);
-    m.position.set((x0 + x1) / 2, y0 + h / 2, (z0 + z1) / 2);
-    m.castShadow = h > 1.3;
-    m.receiveShadow = true;
-    world.add(m);
-    return m;
-  };
-  for (const c of colliders) addBox(c.x0, c.z0, c.x1, c.z1, c.h, MAT_FOR[c.mat]);
+// A unit cube, scaled to the box. Tall boxes cast shadows.
+function boxMesh(unitBox, mats, c) {
+  const m = new THREE.Mesh(unitBox, mats[MAT_FOR[c.mat]]);
+  m.scale.set(c.x1 - c.x0, c.h, c.z1 - c.z0);
+  m.position.set((c.x0 + c.x1) / 2, c.h / 2, (c.z0 + c.z1) / 2);
+  m.castShadow = c.h > 1.3;
+  m.receiveShadow = true;
+  return m;
+}
 
+function flatPlane(w, d, mat, x, y, z) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
+  m.rotation.x = -Math.PI / 2;
+  m.position.set(x, y, z);
+  return m;
+}
+
+function addGround(world, tex) {
   // Ground: crest concrete with an asphalt service strip, the spillway
   // chute in dark concrete, and painted site aprons. The ground gets its
   // own finely-tiled copy of the concrete so the pour reads at distance.
   const groundTex = tex.concrete.clone();
   groundTex.repeat.set(14, 8);
   groundTex.needsUpdate = true;
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(97.2, 57.2),
-    new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95 }));
-  ground.rotation.x = -Math.PI / 2;
+  const ground = flatPlane(97.2, 57.2,
+    new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95 }), 0, 0, 0);
   ground.receiveShadow = true;
   world.add(ground);
-  const chute = new THREE.Mesh(new THREE.PlaneGeometry(10.6, 47),
-    new THREE.MeshStandardMaterial({ map: tex.concreteDark, roughness: 0.9 }));
-  chute.rotation.x = -Math.PI / 2;
-  chute.position.set(-1, 0.02, 4.5);
+  const chute = flatPlane(10.6, 47,
+    new THREE.MeshStandardMaterial({ map: tex.concreteDark, roughness: 0.9 }), -1, 0.02, 4.5);
   chute.receiveShadow = true;
   world.add(chute);
   const roadTex = tex.asphalt.clone();
   roadTex.repeat.set(18, 2);
   roadTex.needsUpdate = true;
-  const road = new THREE.Mesh(new THREE.PlaneGeometry(97, 9),
-    new THREE.MeshStandardMaterial({ map: roadTex, roughness: 0.97 }));
-  road.rotation.x = -Math.PI / 2;
-  road.position.set(0, 0.015, -23.5);
+  const road = flatPlane(97, 9,
+    new THREE.MeshStandardMaterial({ map: roadTex, roughness: 0.97 }), 0, 0.015, -23.5);
   road.receiveShadow = true;
   world.add(road);
+}
 
+function addWater(world, tex) {
   // Water: the spillway runnel, the reservoir (north) and the tailrace
   // far below the dam's south face.
   const waterMat = new THREE.MeshStandardMaterial({
     map: tex.water, roughness: 0.25, metalness: 0.1,
     color: 0x9fd8e8, transparent: true, opacity: 0.92,
   });
-  const runnel = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 47), waterMat);
-  runnel.rotation.x = -Math.PI / 2;
-  runnel.position.set(-1, 0.05, 4.5);
-  world.add(runnel);
-  const reservoir = new THREE.Mesh(new THREE.PlaneGeometry(300, 90), waterMat);
-  reservoir.rotation.x = -Math.PI / 2;
-  reservoir.position.set(0, -0.4, -75);
-  world.add(reservoir);
-  const tailrace = new THREE.Mesh(new THREE.PlaneGeometry(300, 110), waterMat);
-  tailrace.rotation.x = -Math.PI / 2;
-  tailrace.position.set(0, -14, 86);
-  world.add(tailrace);
+  world.add(flatPlane(3.4, 47, waterMat, -1, 0.05, 4.5));
+  world.add(flatPlane(300, 90, waterMat, 0, -0.4, -75));
+  world.add(flatPlane(300, 110, waterMat, 0, -14, 86));
   // The dam's south face dropping to the tailrace.
   const face = new THREE.Mesh(new THREE.BoxGeometry(97.2, 14, 1.6),
     new THREE.MeshStandardMaterial({ map: tex.concreteDark, roughness: 0.95 }));
   face.position.set(0, -7, 28.8);
   world.add(face);
   // Foam strip where the spillway meets the river.
-  const foam = new THREE.Mesh(new THREE.PlaneGeometry(10, 3),
-    new THREE.MeshBasicMaterial({ color: 0xcfeef5, transparent: true, opacity: 0.5 }));
-  foam.rotation.x = -Math.PI / 2;
-  foam.position.set(-1, -13.8, 33);
+  const foam = flatPlane(10, 3,
+    new THREE.MeshBasicMaterial({ color: 0xcfeef5, transparent: true, opacity: 0.5 }),
+    -1, -13.8, 33);
   world.add(foam);
+}
 
-  // Turbines: round shells over their square colliders, hazard crowns.
-  const turbineGeo = new THREE.CylinderGeometry(3, 3.2, 3.2, 20);
+function addTurbines(world, mats) {
+  // Round shells over their square colliders, hazard crowns.
+  const shellGeo = new THREE.CylinderGeometry(3, 3.2, 3.2, 20);
   const crownGeo = new THREE.CylinderGeometry(3.25, 3.25, 0.35, 20);
+  const shaftGeo = new THREE.CylinderGeometry(0.5, 0.5, 2.4, 10);
   for (const tx of [18, 28, 38]) {
-    const t = new THREE.Mesh(turbineGeo, mats.plate);
-    t.position.set(tx, 1.6, 18);
-    t.castShadow = true;
-    t.receiveShadow = true;
-    world.add(t);
+    const shell = new THREE.Mesh(shellGeo, mats.plate);
+    shell.position.set(tx, 1.6, 18);
+    shell.castShadow = true;
+    shell.receiveShadow = true;
+    world.add(shell);
     const crown = new THREE.Mesh(crownGeo, mats.hazard);
     crown.position.set(tx, 3.35, 18);
     world.add(crown);
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 2.4, 10), mats.plateRust);
+    const shaft = new THREE.Mesh(shaftGeo, mats.plateRust);
     shaft.position.set(tx, 4.4, 18);
     world.add(shaft);
   }
+}
 
+function addCrane(world, mats) {
   // Gantry crane over site B: beam, trolley and a hanging hook block.
   const beam = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.2, 12.4), mats.plateRust);
   beam.position.set(33.8, 7.4, -21);
@@ -417,13 +449,16 @@ export function buildWorld(scene, tex) {
   hook.position.set(33.8, 2.5, -21);
   hook.castShadow = true;
   world.add(hook);
+}
 
+function addPipes(world, mats) {
   // Intake pipes on the pier and a pipe run along the south wall.
   const pipeGeo = new THREE.CylinderGeometry(0.55, 0.55, 9, 12);
+  const heights = [0.55, 1.65, 0.55];
   for (let i = 0; i < 3; i++) {
     const p = new THREE.Mesh(pipeGeo, mats.plate);
     p.rotation.z = Math.PI / 2;
-    p.position.set(-43, 0.55 + (i === 1 ? 1.1 : 0), -12 + i * 1.3);
+    p.position.set(-43, heights[i], -12 + i * 1.3);
     p.castShadow = true;
     world.add(p);
   }
@@ -431,14 +466,17 @@ export function buildWorld(scene, tex) {
   southPipe.rotation.z = Math.PI / 2;
   southPipe.position.set(27, 0.4, 25.4);
   world.add(southPipe);
+}
 
+function addSiteMarkers(world, tex) {
   // Site rings and signs.
-  const ringMat = (color) => new THREE.MeshBasicMaterial({
-    color, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
-  });
-  for (const [key, color] of [['A', 0xffb02e], ['B', 0x39d5e8]]) {
+  const ringColors = { A: 0xffb02e, B: 0x39d5e8 };
+  for (const key of ['A', 'B']) {
     const s = SITES[key];
-    const ring = new THREE.Mesh(new THREE.RingGeometry(s.r - 0.35, s.r, 40), ringMat(color));
+    const ring = new THREE.Mesh(new THREE.RingGeometry(s.r - 0.35, s.r, 40),
+      new THREE.MeshBasicMaterial({
+        color: ringColors[key], transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+      }));
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(s.x, 0.06, s.z);
     world.add(ring);
@@ -463,14 +501,24 @@ export function buildWorld(scene, tex) {
   bannerDef.position.set(47.2, 3.4, 1);
   bannerDef.rotation.y = -Math.PI / 2;
   world.add(bannerDef);
+}
 
+// Lamp placements: [x, z, has a real point light].
+const LAMP_SPOTS = [
+  [-20, -24, true], [20, -24, false], [18, 12, true], [38, 24, false],
+  [-22, 6, true], [24, 4, false], [40, -12, true],
+];
+
+function addLamps(world, mats) {
   // Lamps: emissive heads on poles; four real point lights do the work.
-  const lampHead = new THREE.MeshBasicMaterial({ color: 0xffd9a0 });
-  const lampAt = (x, z, withLight) => {
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 4.6, 6), mats.dark);
+  const lampHeadMat = new THREE.MeshBasicMaterial({ color: 0xffd9a0 });
+  const poleGeo = new THREE.CylinderGeometry(0.09, 0.09, 4.6, 6);
+  const headGeo = new THREE.BoxGeometry(0.7, 0.18, 0.4);
+  for (const [x, z, withLight] of LAMP_SPOTS) {
+    const pole = new THREE.Mesh(poleGeo, mats.dark);
     pole.position.set(x, 2.3, z);
     world.add(pole);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.18, 0.4), lampHead);
+    const head = new THREE.Mesh(headGeo, lampHeadMat);
     head.position.set(x, 4.65, z);
     world.add(head);
     if (withLight) {
@@ -478,11 +526,10 @@ export function buildWorld(scene, tex) {
       l.position.set(x, 4.4, z);
       world.add(l);
     }
-  };
-  lampAt(-20, -24, true); lampAt(20, -24, false); lampAt(18, 12, true);
-  lampAt(38, 24, false); lampAt(-22, 6, true); lampAt(24, 4, false);
-  lampAt(40, -12, true);
+  }
+}
 
+function addSkyLights(scene, world) {
   // Dusk sky, sun and air.
   scene.background = new THREE.Color(0x2b3f4a);
   scene.fog = new THREE.Fog(0x2b3f4a, 55, 190);
@@ -502,6 +549,22 @@ export function buildWorld(scene, tex) {
   const hallGlow = new THREE.PointLight(0xbfd9e2, 50, 30, 1.6);
   hallGlow.position.set(27, 5, 17);
   world.add(hallGlow);
+}
+
+export function buildWorld(scene, tex) {
+  const mats = makeMaterials(tex);
+  const world = new THREE.Group();
+  scene.add(world);
+  const unitBox = new THREE.BoxGeometry(1, 1, 1);
+  for (const c of colliders) world.add(boxMesh(unitBox, mats, c));
+  addGround(world, tex);
+  addWater(world, tex);
+  addTurbines(world, mats);
+  addCrane(world, mats);
+  addPipes(world, mats);
+  addSiteMarkers(world, tex);
+  addLamps(world, mats);
+  addSkyLights(scene, world);
 
   return {
     update(dt) {
