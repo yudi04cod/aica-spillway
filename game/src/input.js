@@ -1,6 +1,6 @@
-// input.js — raw keyboard/mouse capture and pointer lock. Consumers read
-// `keys` (held), `pressed` (went down this frame) and the accumulated
-// mouse delta; player.js turns them into movement intent.
+// input.js — raw keyboard/mouse capture and pointer lock. Consumers
+// read `keys` (held), `pressed` (went down this frame) and the
+// accumulated mouse delta; player.js turns them into movement intent.
 
 export const keys = new Set();
 export const pressed = new Set();
@@ -17,7 +17,11 @@ export function initInput(canvas, onLockChange) {
     keys.add(e.code);
   });
   window.addEventListener('keyup', (e) => keys.delete(e.code));
-  window.addEventListener('blur', () => { keys.clear(); mouse.down = false; mouse.rdown = false; });
+  window.addEventListener('blur', () => {
+    keys.clear();
+    mouse.down = false;
+    mouse.rdown = false;
+  });
   document.addEventListener('pointerlockchange', () => {
     locked = document.pointerLockElement === canvas;
     if (onLockChange) onLockChange(locked);
@@ -44,7 +48,8 @@ export function initInput(canvas, onLockChange) {
 
 export function consumeMouse() {
   const d = { dx: mouse.dx, dy: mouse.dy };
-  mouse.dx = 0; mouse.dy = 0;
+  mouse.dx = 0;
+  mouse.dy = 0;
   return d;
 }
 

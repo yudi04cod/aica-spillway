@@ -1,7 +1,7 @@
-// actors.js — combatants: creation, low-poly character meshes (built from
-// boxes, team-coloured), fixed-step movement with acceleration and map
-// collision, and the damage model (armour halves bullet damage; the
-// frag/shrapnel path ignores the head bonus).
+// actors.js — combatants: creation, low-poly character meshes (built
+// from boxes, team-coloured), fixed-step movement with acceleration and
+// map collision, and the damage model (kevlar halves bullet damage;
+// the frag/shrapnel path ignores the head bonus).
 
 import * as THREE from 'three';
 import { state, emit, TEAM } from './state.js';
@@ -9,7 +9,7 @@ import { moveCollide } from './map.js';
 import { makeWeapon } from './weapons.js';
 
 export const BOT_NAMES = [
-  ['Vex', 'Marlin', 'Otter', 'Sable'],       // Sluice Runners (with player)
+  ['Vex', 'Marlin', 'Otter', 'Sable'], // Sluice Runners (beside the player)
   ['Heron', 'Basalt', 'Corin', 'Talus', 'Moss'], // Dam Wardens
 ];
 export const PLAYER_NAME = 'You';
@@ -34,50 +34,68 @@ export function createActor(team, isPlayer, name, x, z, yaw) {
     cur: 'sidearm', kit: false,
     bloom: 0, recoil: 0, lastShotT: -99, nextThrow: 0,
     walkPhase: 0, stepAcc: 0, deathT: 0, hitFlash: 0,
-    // bot brain scratch space (bots.js owns the meaning)
+    // Bot brain scratch space (bots.js owns the meaning).
     brain: null, mesh: null, parts: null,
   };
   if (!isPlayer) {
     const built = buildActorMesh(team);
-    a.mesh = built.group; a.parts = built.parts;
+    a.mesh = built.group;
+    a.parts = built.parts;
   }
   return a;
 }
 
-// A readable soldier from boxes: legs that swing, a torso in team colours,
-// a helmet with a glowing visor slit, and the held weapon as a dark block.
+// A readable soldier from boxes: legs that swing, a torso in team
+// colours, a helmet with a glowing visor slit, and the held weapon as a
+// dark block. The visor faces -Z, the direction the mesh looks.
 function buildActorMesh(team) {
   const c = TEAM_COLORS[team];
   const suit = new THREE.MeshStandardMaterial({ color: c.suit, roughness: 0.85 });
-  const trim = new THREE.MeshStandardMaterial({ color: c.trim, roughness: 0.5, emissive: c.trim, emissiveIntensity: 0.35 });
+  const trim = new THREE.MeshStandardMaterial({
+    color: c.trim, roughness: 0.5, emissive: c.trim, emissiveIntensity: 0.35,
+  });
   const dark = new THREE.MeshStandardMaterial({ color: 0x23282c, roughness: 0.7 });
   const skin = new THREE.MeshStandardMaterial({ color: c.skin, roughness: 0.8 });
   const g = new THREE.Group();
   const box = (w, h, d, mat, x, y, z) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-    m.position.set(x, y, z); m.castShadow = true; g.add(m); return m;
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    g.add(m);
+    return m;
   };
   const legL = box(0.17, 0.78, 0.2, dark, -0.13, 0.39, 0);
   const legR = box(0.17, 0.78, 0.2, dark, 0.13, 0.39, 0);
-  legL.geometry.translate(0, -0.3, 0); legL.position.y = 0.69;
-  legR.geometry.translate(0, -0.3, 0); legR.position.y = 0.69;
+  legL.geometry.translate(0, -0.3, 0);
+  legL.position.y = 0.69;
+  legR.geometry.translate(0, -0.3, 0);
+  legR.position.y = 0.69;
   const torso = box(0.52, 0.62, 0.3, suit, 0, 1.09, 0);
   box(0.54, 0.1, 0.32, trim, 0, 1.32, 0); // chest light strip
   const armL = box(0.13, 0.55, 0.15, suit, -0.34, 1.12, -0.05);
   const armR = box(0.13, 0.55, 0.15, suit, 0.34, 1.12, -0.05);
   const head = box(0.3, 0.3, 0.3, skin, 0, 1.56, 0);
   box(0.34, 0.14, 0.34, dark, 0, 1.7, 0); // helmet
-  box(0.26, 0.05, 0.02, trim, 0, 1.58, -0.16); // visor slit (faces -Z)
+  box(0.26, 0.05, 0.02, trim, 0, 1.58, -0.16); // visor slit
   const gun = box(0.09, 0.16, 0.78, dark, 0.22, 1.18, -0.42);
   return { group: g, parts: { legL, legR, armL, armR, torso, head, gun, suit, trim } };
 }
 
 export function resetActorForRound(a, x, z, yaw) {
-  a.pos.set(x, 0, z); a.vel.set(0, 0, 0);
-  a.yaw = yaw; a.pitch = 0;
-  a.hp = 100; a.alive = true; a.deathT = 0; a.hitFlash = 0;
-  a.crouch = false; a.bloom = 0; a.recoil = 0;
-  a.wishX = 0; a.wishZ = 0; a.wishSpeed = 0;
+  a.pos.set(x, 0, z);
+  a.vel.set(0, 0, 0);
+  a.yaw = yaw;
+  a.pitch = 0;
+  a.hp = 100;
+  a.alive = true;
+  a.deathT = 0;
+  a.hitFlash = 0;
+  a.crouch = false;
+  a.bloom = 0;
+  a.recoil = 0;
+  a.wishX = 0;
+  a.wishZ = 0;
+  a.wishSpeed = 0;
   if (a.mesh) {
     a.mesh.visible = true;
     a.mesh.rotation.set(0, 0, 0);
@@ -85,7 +103,7 @@ export function resetActorForRound(a, x, z, yaw) {
   }
 }
 
-// Damage: armour (kevlar + helm) halves gun damage while its pool lasts.
+// Damage: kevlar (armour + helm) halves gun damage while its pool lasts.
 // Returns true when the hit killed.
 export function applyDamage(target, dmg, head, attacker, weaponKey) {
   if (!target.alive || state.phase === 'over' || state.phase === 'match') return false;
@@ -103,7 +121,9 @@ export function applyDamage(target, dmg, head, attacker, weaponKey) {
   emit('hit', { byPlayer: attacker && !attacker.bot, head, x: target.pos.x, z: target.pos.z });
   emit('hurt', { isPlayer: !target.bot, x: target.pos.x, z: target.pos.z });
   if (target.hp > 0) return false;
-  target.hp = 0; target.alive = false; target.deathT = 0;
+  target.hp = 0;
+  target.alive = false;
+  target.deathT = 0;
   target.deaths++;
   if (attacker && attacker !== target) {
     attacker.kills++;
@@ -117,8 +137,9 @@ export function applyDamage(target, dmg, head, attacker, weaponKey) {
 
 const GRAV = 22, ACCEL = 42, FRICTION = 9;
 
-// One fixed step of body movement: wish direction + speed come from the
-// player controller or a bot brain; this integrates, collides, animates.
+// One fixed step of body movement: the wish direction + speed come from
+// the player controller or a bot brain; this integrates, collides and
+// animates.
 export function stepMovement(a, dt) {
   const maxSpeed = a.wishSpeed * (a.crouch ? 0.45 : 1);
   // Accelerate toward the wish velocity on the ground; weaker air control.
@@ -128,12 +149,17 @@ export function stepMovement(a, dt) {
   const sp = Math.hypot(a.vel.x, a.vel.z);
   if (a.grounded) {
     const drag = Math.max(0, 1 - FRICTION * dt * (a.wishSpeed > 0 ? 0.35 : 1));
-    a.vel.x *= drag; a.vel.z *= drag;
+    a.vel.x *= drag;
+    a.vel.z *= drag;
     const sp2 = Math.hypot(a.vel.x, a.vel.z);
     if (sp2 > maxSpeed && maxSpeed > 0) {
-      a.vel.x *= maxSpeed / sp2; a.vel.z *= maxSpeed / sp2;
+      a.vel.x *= maxSpeed / sp2;
+      a.vel.z *= maxSpeed / sp2;
     }
-  } else if (sp > 7.5) { a.vel.x *= 7.5 / sp; a.vel.z *= 7.5 / sp; }
+  } else if (sp > 7.5) {
+    a.vel.x *= 7.5 / sp;
+    a.vel.z *= 7.5 / sp;
+  }
 
   if (a.wishJump && a.grounded) { a.vel.y = 7.6; a.grounded = false; }
   a.wishJump = false;
@@ -176,7 +202,8 @@ export function animateActor(a) {
   m.rotation.set(0, a.yaw, 0);
   const hs = Math.hypot(a.vel.x, a.vel.z);
   const swing = Math.sin(a.walkPhase) * Math.min(0.6, hs * 0.14);
-  p.legL.rotation.x = swing; p.legR.rotation.x = -swing;
+  p.legL.rotation.x = swing;
+  p.legR.rotation.x = -swing;
   p.armL.rotation.x = -swing * 0.7;
   p.armR.rotation.x = -a.pitch * 0.9 + swing * 0.3;
   p.gun.rotation.x = -a.pitch;

@@ -27,7 +27,11 @@ export function unlockAudio() {
   if (ctx && ctx.state === 'suspended') ctx.resume();
 }
 
-export function setListener(x, z, yaw) { listener.x = x; listener.z = z; listener.yaw = yaw; }
+export function setListener(x, z, yaw) {
+  listener.x = x;
+  listener.z = z;
+  listener.yaw = yaw;
+}
 
 // Gain/pan for a world position; near = the player's own sounds.
 function place(x, z, base) {
@@ -36,7 +40,8 @@ function place(x, z, base) {
   const dist = Math.hypot(dx, dz);
   const vol = base / (1 + dist * 0.14);
   if (vol < 0.004) return null;
-  const g = ctx.createGain(); g.gain.value = vol;
+  const g = ctx.createGain();
+  g.gain.value = vol;
   let node = g;
   if (ctx.createStereoPanner) {
     const p = ctx.createStereoPanner();
@@ -44,34 +49,43 @@ function place(x, z, base) {
     const rightX = -fwdZ, rightZ = fwdX;
     const s = dist > 0.01 ? (dx * rightX + dz * rightZ) / dist : 0;
     p.pan.value = Math.max(-0.85, Math.min(0.85, s));
-    g.connect(p); p.connect(master);
+    g.connect(p);
+    p.connect(master);
     node = g;
   } else g.connect(master);
   return { out: g, dist };
 }
 
 function noise(t0, dur, filterType, f0, f1, out) {
-  const src = ctx.createBufferSource(); src.buffer = noiseBuf;
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuf;
   src.playbackRate.value = 0.9 + Math.random() * 0.2;
-  const flt = ctx.createBiquadFilter(); flt.type = filterType;
+  const flt = ctx.createBiquadFilter();
+  flt.type = filterType;
   flt.frequency.setValueAtTime(f0, t0);
   flt.frequency.exponentialRampToValueAtTime(Math.max(30, f1), t0 + dur);
   const g = ctx.createGain();
   g.gain.setValueAtTime(1, t0);
   g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-  src.connect(flt); flt.connect(g); g.connect(out);
-  src.start(t0); src.stop(t0 + dur + 0.05);
+  src.connect(flt);
+  flt.connect(g);
+  g.connect(out);
+  src.start(t0);
+  src.stop(t0 + dur + 0.05);
 }
 
 function tone(t0, dur, type, f0, f1, out, vol = 1) {
-  const o = ctx.createOscillator(); o.type = type;
+  const o = ctx.createOscillator();
+  o.type = type;
   o.frequency.setValueAtTime(f0, t0);
   o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t0 + dur);
   const g = ctx.createGain();
   g.gain.setValueAtTime(vol, t0);
   g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-  o.connect(g); g.connect(out);
-  o.start(t0); o.stop(t0 + dur + 0.05);
+  o.connect(g);
+  g.connect(out);
+  o.start(t0);
+  o.stop(t0 + dur + 0.05);
 }
 
 const SHOT_PARAMS = {
@@ -107,35 +121,60 @@ function beep(x, z, freq, vol = 0.3) {
 
 function subscribe() {
   on('shot', (e) => shotSound(e.kind, e.x, e.z));
-  on('empty', (e) => { const p = place(e.x, e.z, 0.25); if (p) tone(ctx.currentTime, 0.05, 'square', 1200, 900, p.out, 0.4); });
+  on('empty', (e) => {
+    const p = place(e.x, e.z, 0.25);
+    if (p) tone(ctx.currentTime, 0.05, 'square', 1200, 900, p.out, 0.4);
+  });
   on('reload', (e) => {
-    const p = place(e.x, e.z, 0.3); if (!p) return;
+    const p = place(e.x, e.z, 0.3);
+    if (!p) return;
     const t = ctx.currentTime;
     tone(t, 0.05, 'square', 500, 300, p.out, 0.5);
     tone(t + 0.22, 0.05, 'square', 700, 420, p.out, 0.5);
   });
-  on('hit', (e) => { if (e.byPlayer && ctx) tone(ctx.currentTime, 0.06, 'square', 1900, 1500, master, 0.25); });
+  on('hit', (e) => {
+    if (e.byPlayer && ctx) tone(ctx.currentTime, 0.06, 'square', 1900, 1500, master, 0.25);
+  });
   on('kill', (e) => {
     if (!ctx) return;
-    if (e.byPlayer) { tone(ctx.currentTime, 0.1, 'square', 880, 880, master, 0.3); tone(ctx.currentTime + 0.09, 0.16, 'square', 1320, 1320, master, 0.3); }
-    else if (e.victimIsPlayer) tone(ctx.currentTime, 0.4, 'sawtooth', 160, 60, master, 0.4);
+    if (e.byPlayer) {
+      tone(ctx.currentTime, 0.1, 'square', 880, 880, master, 0.3);
+      tone(ctx.currentTime + 0.09, 0.16, 'square', 1320, 1320, master, 0.3);
+    } else if (e.victimIsPlayer) {
+      tone(ctx.currentTime, 0.4, 'sawtooth', 160, 60, master, 0.4);
+    }
   });
-  on('hurt', (e) => { if (e.isPlayer && ctx) noise(ctx.currentTime, 0.12, 'lowpass', 700, 200, master); });
+  on('hurt', (e) => {
+    if (e.isPlayer && ctx) noise(ctx.currentTime, 0.12, 'lowpass', 700, 200, master);
+  });
   on('explode', (e) => explosionSound(e.x, e.z, e.big));
-  on('smokepop', (e) => { const p = place(e.x, e.z, 0.4); if (p) noise(ctx.currentTime, 0.5, 'bandpass', 900, 500, p.out); });
-  on('throw', (e) => { const p = place(e.x, e.z, 0.2); if (p) tone(ctx.currentTime, 0.12, 'sine', 500, 800, p.out, 0.4); });
+  on('smokepop', (e) => {
+    const p = place(e.x, e.z, 0.4);
+    if (p) noise(ctx.currentTime, 0.5, 'bandpass', 900, 500, p.out);
+  });
+  on('throw', (e) => {
+    const p = place(e.x, e.z, 0.2);
+    if (p) tone(ctx.currentTime, 0.12, 'sine', 500, 800, p.out, 0.4);
+  });
   on('planttick', (e) => beep(e.x, e.z, 1250, 0.35));
   on('bombtick', (e) => beep(e.x, e.z, e.fast ? 1560 : 1180, 0.32));
-  on('planted', (e) => { beep(e.x, e.z, 1560, 0.4); if (ctx) tone(ctx.currentTime + 0.05, 0.3, 'square', 780, 780, master, 0.15); });
-  on('buy', () => { if (ctx) tone(ctx.currentTime, 0.07, 'square', 990, 990, master, 0.25); });
-  on('denied', () => { if (ctx) tone(ctx.currentTime, 0.12, 'square', 220, 180, master, 0.25); });
+  on('planted', (e) => {
+    beep(e.x, e.z, 1560, 0.4);
+    if (ctx) tone(ctx.currentTime + 0.05, 0.3, 'square', 780, 780, master, 0.15);
+  });
+  on('buy', () => {
+    if (ctx) tone(ctx.currentTime, 0.07, 'square', 990, 990, master, 0.25);
+  });
+  on('denied', () => {
+    if (ctx) tone(ctx.currentTime, 0.12, 'square', 220, 180, master, 0.25);
+  });
   on('roundwin', (e) => {
     if (!ctx) return;
     const base = e.won ? [523, 659, 784] : [392, 330, 262];
     base.forEach((f, i) => tone(ctx.currentTime + i * 0.13, 0.22, 'triangle', f, f, master, 0.3));
   });
   on('step', (e) => {
-    const p = place(e.x, e.z, e.isPlayer ? 0.10 : 0.16);
+    const p = place(e.x, e.z, e.isPlayer ? 0.1 : 0.16);
     if (p) noise(ctx.currentTime, 0.06, 'lowpass', 500, 200, p.out);
   });
 }

@@ -10,8 +10,8 @@ import { SITES } from './map.js';
 
 const el = {};
 let buyOpen = false;
-let lastHud = {};
-let feedTimers = [];
+const lastHud = {};
+const feedTimers = [];
 
 export function initHud() {
   for (const id of ['health', 'armorbar', 'ammo', 'reserve', 'weaponname', 'money', 'timer',
@@ -30,14 +30,18 @@ export function initHud() {
   });
   on('roundwin', (e) => {
     const why = {
-      elimination: 'by elimination', detonate: 'charge detonated',
-      defuse: 'charge defused', time: 'time expired',
+      elimination: 'by elimination',
+      detonate: 'charge detonated',
+      defuse: 'charge defused',
+      time: 'time expired',
     }[e.why] || '';
     showBanner(e.won ? 'ROUND WON' : 'ROUND LOST', `${TEAM_NAMES[e.winner]} take it ${why}`);
     el.banner.classList.toggle('lost', !e.won);
   });
   on('matchwin', (e) => {
-    el.finalbanner.textContent = e.winner === state.player.team ? 'MATCH WON — THE DAM IS YOURS' : 'MATCH LOST';
+    el.finalbanner.textContent = e.winner === state.player.team
+      ? 'MATCH WON — THE DAM IS YOURS'
+      : 'MATCH LOST';
     el.finalbanner.style.display = 'block';
   });
   on('planted', (e) => showBanner('CHARGE PLANTED', `Site ${e.site} — ${RULES.bombSeconds} seconds`));
@@ -60,9 +64,13 @@ export function initHud() {
 function showBanner(main, sub) {
   el.banner.textContent = main;
   el.subbanner.textContent = sub || '';
-  el.banner.style.opacity = '1'; el.subbanner.style.opacity = '1';
+  el.banner.style.opacity = '1';
+  el.subbanner.style.opacity = '1';
   clearTimeout(showBanner._t);
-  showBanner._t = setTimeout(() => { el.banner.style.opacity = '0'; el.subbanner.style.opacity = '0'; }, 2600);
+  showBanner._t = setTimeout(() => {
+    el.banner.style.opacity = '0';
+    el.subbanner.style.opacity = '0';
+  }, 2600);
 }
 
 function addFeed(e) {
@@ -73,7 +81,10 @@ function addFeed(e) {
     `<b class="${e.victim.team === 0 ? 'atk' : 'def'}">${e.victim.name}</b> <i>${wname}${e.head ? ' ⌖' : ''}</i>`;
   el.killfeed.prepend(row);
   while (el.killfeed.children.length > 6) el.killfeed.lastChild.remove();
-  const t = setTimeout(() => { row.style.opacity = '0'; setTimeout(() => row.remove(), 400); }, 4600);
+  const t = setTimeout(() => {
+    row.style.opacity = '0';
+    setTimeout(() => row.remove(), 400);
+  }, 4600);
   feedTimers.push(t);
 }
 
@@ -82,7 +93,10 @@ function addNote(text) {
   row.className = 'feedrow note';
   row.textContent = text;
   el.killfeed.prepend(row);
-  setTimeout(() => { row.style.opacity = '0'; setTimeout(() => row.remove(), 400); }, 3600);
+  setTimeout(() => {
+    row.style.opacity = '0';
+    setTimeout(() => row.remove(), 400);
+  }, 3600);
 }
 
 // ---- buy menu ---------------------------------------------------------------
@@ -107,7 +121,8 @@ export function buyItem(item) {
   if (p.money < item.price) return deny();
   if (item.id === 'armor') {
     if (p.hasArmor && p.armorPool >= 100) return deny();
-    p.hasArmor = true; p.armorPool = 100;
+    p.hasArmor = true;
+    p.armorPool = 100;
   } else if (item.id === 'kit') {
     if (p.kit) return deny();
     p.kit = true;
@@ -132,7 +147,10 @@ function deny() { emit('denied', {}); }
 // ---- per-frame refresh --------------------------------------------------------
 
 function setText(node, key, text) {
-  if (lastHud[key] !== text) { lastHud[key] = text; node.textContent = text; }
+  if (lastHud[key] !== text) {
+    lastHud[key] = text;
+    node.textContent = text;
+  }
 }
 
 export function updateHud() {
@@ -159,7 +177,8 @@ export function updateHud() {
   else if (w) setText(el.ammo, 'am', w.reloadEnd > state.time ? '——' : `${w.ammo}`);
   else setText(el.ammo, 'am', '—');
   setText(el.reserve, 'res', w ? `/ ${w.reserve}` : '');
-  setText(el.weaponname, 'wn', p.cur === 'frag' ? 'Frag Charge' : p.cur === 'smoke' ? 'Smoke Pot' : (w ? w.def.name : ''));
+  setText(el.weaponname, 'wn', p.cur === 'frag' ? 'Frag Charge'
+    : p.cur === 'smoke' ? 'Smoke Pot' : (w ? w.def.name : ''));
   setText(el.money, 'mo', `$${p.money}`);
 
   const t = state.phase === PHASE.PLANTED ? state.bomb.timer : state.phaseT;
@@ -188,9 +207,14 @@ export function updateHud() {
   }
 
   // Scoreboard while Tab is held (or forced by a staged screenshot).
+  // It sits centre-screen, so the centre banner gets out of its way.
   const showScore = keys.has('Tab') || window.__forceScore === true;
   el.scoreboard.style.display = showScore ? 'block' : 'none';
-  if (showScore) renderScoreboard();
+  if (showScore) {
+    el.banner.style.opacity = '0';
+    el.subbanner.style.opacity = '0';
+    renderScoreboard();
+  }
 
   drawRadar();
   // DMR scope overlay while aiming.
@@ -217,25 +241,38 @@ function drawRadar() {
   // Site rings.
   for (const [key, col] of [['A', '#ffb02e'], ['B', '#39d5e8']]) {
     const s = SITES[key];
-    x2.strokeStyle = col; x2.beginPath(); x2.arc(px(s.x), pz(s.z), 5, 0, 7); x2.stroke();
-    x2.fillStyle = col; x2.fillText(key, px(s.x) - 3, pz(s.z) + 3);
+    x2.strokeStyle = col;
+    x2.beginPath();
+    x2.arc(px(s.x), pz(s.z), 5, 0, 7);
+    x2.stroke();
+    x2.fillStyle = col;
+    x2.fillText(key, px(s.x) - 3, pz(s.z) + 3);
   }
   if (state.bomb.planted) {
     x2.fillStyle = '#ff5340';
-    x2.beginPath(); x2.arc(px(state.bomb.x), pz(state.bomb.z), 3.4, 0, 7); x2.fill();
+    x2.beginPath();
+    x2.arc(px(state.bomb.x), pz(state.bomb.z), 3.4, 0, 7);
+    x2.fill();
   }
   const p = state.player;
   for (const a of state.actors) {
     if (!a.alive || a === p) continue;
     if (a.team !== p.team) continue; // radar shows friendlies only
     x2.fillStyle = a.team === 0 ? '#39d5e8' : '#ffb02e';
-    x2.beginPath(); x2.arc(px(a.pos.x), pz(a.pos.z), 2.4, 0, 7); x2.fill();
+    x2.beginPath();
+    x2.arc(px(a.pos.x), pz(a.pos.z), 2.4, 0, 7);
+    x2.fill();
   }
   // Player arrow.
   x2.save();
   x2.translate(px(p.pos.x), pz(p.pos.z));
   x2.rotate(-p.yaw);
   x2.fillStyle = '#ffffff';
-  x2.beginPath(); x2.moveTo(0, -5); x2.lineTo(3.4, 4); x2.lineTo(-3.4, 4); x2.closePath(); x2.fill();
+  x2.beginPath();
+  x2.moveTo(0, -5);
+  x2.lineTo(3.4, 4);
+  x2.lineTo(-3.4, 4);
+  x2.closePath();
+  x2.fill();
   x2.restore();
 }

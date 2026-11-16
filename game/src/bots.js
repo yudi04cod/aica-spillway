@@ -1,8 +1,8 @@
-// bots.js — the nine bot brains. Each bot perceives on a staggered clock
-// (line of sight + smoke + hearing gunfire), paths over the waypoint
-// graph, fights in bursts with human-ish aim error, and plays the
-// objective: escorts and a planter for the Runners; holders, a flex and
-// retakes for the Wardens.
+// bots.js — the nine bot brains. Each bot perceives on a staggered
+// clock (line of sight + smoke + hearing gunfire), paths over the
+// waypoint graph, fights in bursts with human-ish aim error, and plays
+// the objective: escorts and a planter for the Runners; holders, a flex
+// and retakes for the Wardens.
 
 import { state, TEAM, PHASE } from './state.js';
 import {
@@ -19,9 +19,10 @@ export function newBrain() {
     role: 'escort', site: 'A', path: [], pathI: 0, mode: 'advance',
     enemy: null, seenT: -99, seenPos: { x: 0, z: 0 }, hearT: -99,
     thinkT: Math.random() * 0.12, reactT: 0, burst: 0, pauseT: 0,
-    strafeDir: 1, strafeT: 0, holdYaw: 0, holdSpot: null, scanPhase: Math.random() * 6,
-    repathT: 0, stuckT: 0, lastX: 0, lastZ: 0, threwSmoke: false, flankWaitT: 0,
-    patrolFlip: false,
+    strafeDir: 1, strafeT: 0, holdYaw: 0, holdSpot: null,
+    scanPhase: Math.random() * 6, repathT: 0, stuckT: 0, stuckWin: 0,
+    lastX: 0, lastZ: 0, threwSmoke: false, patrolFlip: false,
+    liteYaw: undefined, legT: 0,
   };
 }
 
@@ -35,7 +36,9 @@ export function planRound() {
   for (const a of atk) {
     if (!a.bot) continue;
     const b = a.brain;
-    b.site = site; b.mode = 'advance'; b.threwSmoke = false;
+    b.site = site;
+    b.mode = 'advance';
+    b.threwSmoke = false;
     if (state.bomb.carrier === a) b.role = 'planter';
     else if (escorts < 2) { b.role = 'escort'; escorts++; }
     else { b.role = 'flank'; b.site = site === 'A' ? 'B' : 'A'; }
@@ -46,9 +49,21 @@ export function planRound() {
   def.forEach((a, i) => {
     const b = a.brain;
     b.mode = 'advance';
-    if (i === def.length - 1 && def.length > 4) { b.role = 'flex'; b.site = 'A'; setPathTo(a, 9); }
-    else if (i % 2 === 0) { b.role = 'hold'; b.site = 'A'; b.holdSpot = spotsA[(i / 2) % spotsA.length]; setPathTo(a, nearestNode(b.holdSpot.x, b.holdSpot.z)); }
-    else { b.role = 'hold'; b.site = 'B'; b.holdSpot = spotsB[((i - 1) / 2) % spotsB.length]; setPathTo(a, nearestNode(b.holdSpot.x, b.holdSpot.z)); }
+    if (i === def.length - 1 && def.length > 4) {
+      b.role = 'flex';
+      b.site = 'A';
+      setPathTo(a, 9);
+    } else if (i % 2 === 0) {
+      b.role = 'hold';
+      b.site = 'A';
+      b.holdSpot = spotsA[(i / 2) % spotsA.length];
+      setPathTo(a, nearestNode(b.holdSpot.x, b.holdSpot.z));
+    } else {
+      b.role = 'hold';
+      b.site = 'B';
+      b.holdSpot = spotsB[((i - 1) / 2) % spotsB.length];
+      setPathTo(a, nearestNode(b.holdSpot.x, b.holdSpot.z));
+    }
   });
   return site;
 }
@@ -92,24 +107,35 @@ export function botBuy(a) {
     return true;
   };
   if (!a.hasArmor && a.money >= 650 && Math.random() < 0.85) {
-    a.money -= 650; a.hasArmor = true; a.armorPool = 100;
+    a.money -= 650;
+    a.hasArmor = true;
+    a.armorPool = 100;
   }
   if (!a.inv.primary) {
     if (a.money >= 2700) buy(Math.random() < 0.8 ? 'vk47' : 'harpoon');
     else if (a.money >= 1100) buy(Math.random() < 0.5 ? 'riptide' : 'breaker');
     else if (a.money >= 600) buy('kestrel');
-  } else if ((a.inv.primary.key === 'riptide' || a.inv.primary.key === 'breaker') && a.money >= 3400 && Math.random() < 0.75) {
+  } else if ((a.inv.primary.key === 'riptide' || a.inv.primary.key === 'breaker') &&
+      a.money >= 3400 && Math.random() < 0.75) {
     buy('vk47'); // trade the cheap gun up when the wallet allows
   }
-  if (a.team === TEAM.DEF && !a.kit && a.money >= 400) { a.money -= 400; a.kit = true; }
-  if (a.inv.frag === 0 && a.money >= 900 && Math.random() < 0.5) { a.money -= 300; a.inv.frag = 1; }
-  if (a.inv.smoke === 0 && a.money >= 900 && Math.random() < 0.4) { a.money -= 300; a.inv.smoke = 1; }
+  if (a.team === TEAM.DEF && !a.kit && a.money >= 400) {
+    a.money -= 400;
+    a.kit = true;
+  }
+  if (a.inv.frag === 0 && a.money >= 900 && Math.random() < 0.5) {
+    a.money -= 300;
+    a.inv.frag = 1;
+  }
+  if (a.inv.smoke === 0 && a.money >= 900 && Math.random() < 0.4) {
+    a.money -= 300;
+    a.inv.smoke = 1;
+  }
   a.cur = a.inv.primary ? 'primary' : 'sidearm';
 }
 
 // ---- perception -------------------------------------------------------------
 
-const _eye = { y: 0 };
 function canSee(a, e) {
   const dx = e.pos.x - a.pos.x, dz = e.pos.z - a.pos.z;
   const dist = Math.hypot(dx, dz);
@@ -132,7 +158,10 @@ function perceive(a) {
   for (const e of state.actors) {
     if (e.team === a.team || !e.alive) continue;
     const d = Math.hypot(e.pos.x - a.pos.x, e.pos.z - a.pos.z);
-    if (canSee(a, e)) { if (d < bestD) { bestD = d; bestE = e; } continue; }
+    if (canSee(a, e)) {
+      if (d < bestD) { bestD = d; bestE = e; }
+      continue;
+    }
     // Hearing: recent gunfire nearby, or loud movement very close.
     if (state.time - e.lastShotT < 0.5 && d < 27) {
       if (d < bestD) { bestD = d; bestE = e; b.hearT = state.time; }
@@ -142,8 +171,10 @@ function perceive(a) {
   }
   if (bestE) {
     if (b.enemy !== bestE) b.reactT = 0;
-    b.enemy = bestE; b.seenT = state.time;
-    b.seenPos.x = bestE.pos.x; b.seenPos.z = bestE.pos.z;
+    b.enemy = bestE;
+    b.seenT = state.time;
+    b.seenPos.x = bestE.pos.x;
+    b.seenPos.z = bestE.pos.z;
   }
 }
 
@@ -163,7 +194,9 @@ function moveToward(a, x, z, speed) {
   const dx = x - a.pos.x, dz = z - a.pos.z;
   const d = Math.hypot(dx, dz);
   if (d < 0.05) { a.wishX = 0; a.wishZ = 0; a.wishSpeed = 0; return d; }
-  a.wishX = dx / d; a.wishZ = dz / d; a.wishSpeed = speed;
+  a.wishX = dx / d;
+  a.wishZ = dz / d;
+  a.wishSpeed = speed;
   return d;
 }
 
@@ -178,7 +211,10 @@ function followPath(a, speed) {
   // handled by the stuck detector repathing via a walkable node.
   const d = moveToward(a, nx, nz, speed);
   faceToward(a, nx, nz, 1 / 60, 5);
-  if (d < 1.25) { b.pathI++; if (b.pathI >= b.path.length) { stop(a); return true; } }
+  if (d < 1.25) {
+    b.pathI++;
+    if (b.pathI >= b.path.length) { stop(a); return true; }
+  }
   return false;
 }
 
@@ -188,7 +224,8 @@ function engage(a, dt) {
   const b = a.brain, e = b.enemy;
   if (!e || !e.alive) { b.mode = 'advance'; return; }
   const fresh = state.time - b.seenT < 0.3;
-  const tx = fresh ? e.pos.x : b.seenPos.x, tz = fresh ? e.pos.z : b.seenPos.z;
+  const tx = fresh ? e.pos.x : b.seenPos.x;
+  const tz = fresh ? e.pos.z : b.seenPos.z;
   const dist = Math.hypot(tx - a.pos.x, tz - a.pos.z);
   const aimY = e.crouch ? 1.05 : (Math.random() < 0.22 ? 1.5 : 1.15);
   const yawErr = faceToward(a, tx, tz, dt, 8);
@@ -210,26 +247,33 @@ function engage(a, dt) {
   // Attackers close the distance while trading; defenders hold ground.
   if (a.team === TEAM.ATK && dist > 15) { mx = fx; mz = fz; }
   const ml = Math.hypot(mx, mz) || 1;
-  a.wishX = mx / ml; a.wishZ = mz / ml;
+  a.wishX = mx / ml;
+  a.wishZ = mz / ml;
   // Stop to shoot, strafe while breathing: accuracy is the whole game.
   a.wishSpeed = b.pauseT > 0 ? 3.2 : (a.team === TEAM.ATK && dist > 15 ? 2.7 : 0.4);
 
   // Fire discipline: settle, then burst, then breathe.
-  if (!fresh) { if (state.time - b.seenT > 1.4) { b.mode = 'hunt'; setPathTo(a, nearestNode(tx, tz)); } return; }
+  if (!fresh) {
+    if (state.time - b.seenT > 1.4) { b.mode = 'hunt'; setPathTo(a, nearestNode(tx, tz)); }
+    return;
+  }
   if (b.reactT < 0.24 + (a.id % 4) * 0.05) return;
   if (b.pauseT > 0) { b.pauseT -= dt; return; }
   if (yawErr > 0.09) return;
   const w = currentWeapon(a);
   if (!w) return;
-  if (w.ammo === 0) { /* reload handled in main loop */ return; }
+  if (w.ammo === 0) return; // reload handled in the main loop
   if (fireWeapon(a, applyDamage)) {
     b.burst++;
     const burstLen = w.def.auto ? 3 + (a.id % 3) : 1;
-    if (b.burst >= burstLen) { b.burst = 0; b.pauseT = 0.22 + Math.random() * 0.3; }
+    if (b.burst >= burstLen) {
+      b.burst = 0;
+      b.pauseT = 0.22 + Math.random() * 0.3;
+    }
   }
 }
 
-// ---- objective play -----------------------------------------------------------
+// ---- objective play ---------------------------------------------------------
 
 function planterPlay(a, dt) {
   const b = a.brain, bomb = state.bomb;
@@ -237,7 +281,6 @@ function planterPlay(a, dt) {
   const s = SITES[b.site];
   if (!inSite(a.pos.x, a.pos.z, b.site)) {
     if (followPath(a, RUN)) setPathTo(a, siteNode(b.site, a));
-    // An escort's smoke screens the plant.
     return;
   }
   // In the site: walk to a covered plant spot near the site centre.
@@ -251,7 +294,10 @@ function planterPlay(a, dt) {
 function postPlant(a, dt) {
   const b = a.brain;
   const spot = HOLD_SPOTS.filter((s) => s.site === state.bomb.site)[a.id % 2];
-  if (!b.holdSpot || b.holdSpot !== spot) { b.holdSpot = spot; setPathTo(a, nearestNode(spot.x, spot.z)); }
+  if (!b.holdSpot || b.holdSpot !== spot) {
+    b.holdSpot = spot;
+    setPathTo(a, nearestNode(spot.x, spot.z));
+  }
   if (followPath(a, RUN)) holdPosition(a, dt);
 }
 
@@ -273,12 +319,16 @@ function defenderPlay(a, dt) {
   const b = a.brain, bomb = state.bomb;
   if (bomb.planted) {
     if (bomb.site === b.site || b.role !== 'hold') { retake(a, dt); return; }
-    holdPosition(a, dt); return;
+    holdPosition(a, dt);
+    return;
   }
   if (b.role === 'flex') {
     // Patrol control room <-> apron; flip at each end.
     const target = b.patrolFlip ? 23 : 9;
-    if (followPath(a, WALK)) { b.patrolFlip = !b.patrolFlip; setPathTo(a, b.patrolFlip ? 23 : 9); }
+    if (followPath(a, WALK)) {
+      b.patrolFlip = !b.patrolFlip;
+      setPathTo(a, b.patrolFlip ? 23 : 9);
+    }
     return;
   }
   if (followPath(a, RUN) || !b.path.length) holdPosition(a, dt);
@@ -306,7 +356,11 @@ function escortPlay(a, dt) {
   if (state.bomb.planted) { postPlant(a, dt); return; }
   if (b.role === 'flank') {
     // Show at the wrong site, then rotate once the plant is on or late.
-    if (state.phase === PHASE.PLANTED || (state.roundClock || 0) > 55) { b.role = 'escort'; b.site = state.bomb.site || b.site; setPathTo(a, siteNode(b.site, a)); }
+    if (state.phase === PHASE.PLANTED || (state.roundClock || 0) > 55) {
+      b.role = 'escort';
+      b.site = state.bomb.site || b.site;
+      setPathTo(a, siteNode(b.site, a));
+    }
     if (followPath(a, RUN)) holdPositionLite(a, dt);
     return;
   }
@@ -328,7 +382,8 @@ function escortPlay(a, dt) {
       const cd = Math.hypot(carrier.pos.x - s.x, carrier.pos.z - s.z);
       if (cd < 15) {
         b.threwSmoke = true;
-        const prev = a.cur; a.cur = 'smoke';
+        const prev = a.cur;
+        a.cur = 'smoke';
         faceToward(a, s.x, s.z, dt, 9);
         a.pitch = 0.1;
         throwGrenade(a, 'smoke');
@@ -359,7 +414,9 @@ export function updateBot(a, dt) {
   if (b.stuckWin >= 0.8) {
     const moved = Math.hypot(a.pos.x - b.lastX, a.pos.z - b.lastZ);
     if (a.wishSpeed > 0 && moved < 0.3) b.stuckT += 0.8; else b.stuckT = 0;
-    b.lastX = a.pos.x; b.lastZ = a.pos.z; b.stuckWin = 0;
+    b.lastX = a.pos.x;
+    b.lastZ = a.pos.z;
+    b.stuckWin = 0;
     if (b.stuckT >= 1.6) {
       b.stuckT = 0;
       const target = b.path.length ? b.path[b.path.length - 1] : siteNode(b.site, a);
@@ -400,7 +457,8 @@ export function updateBot(a, dt) {
     if (d > 7 && d < 19) {
       faceToward(a, b.seenPos.x, b.seenPos.z, dt, 10);
       a.pitch = d > 13 ? -0.12 : 0.08;
-      const prev = a.cur; a.cur = 'frag';
+      const prev = a.cur;
+      a.cur = 'frag';
       throwGrenade(a, 'frag');
       a.cur = prev;
     }

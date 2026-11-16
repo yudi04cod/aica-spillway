@@ -1,14 +1,16 @@
 # SPILLWAY — Tactical Breach at Meridian Dam
 
 [![make.fun bounty](https://make.fun/badge/threejs-fps-01.svg)](https://make.fun/c/threejs-fps-01)
-[![rank](https://make.fun/badge/threejs-fps-01/{owner}/{repo}/rank.svg)](https://make.fun/c/threejs-fps-01)
-[![reward](https://make.fun/badge/threejs-fps-01/{owner}/{repo}/reward.svg)](https://make.fun/c/threejs-fps-01)
+[![rank](https://make.fun/badge/threejs-fps-01/yudi04cod/aica-spillway/rank.svg)](https://make.fun/c/threejs-fps-01)
+[![reward](https://make.fun/badge/threejs-fps-01/yudi04cod/aica-spillway/reward.svg)](https://make.fun/c/threejs-fps-01)
 
 An original round-based tactical FPS for the browser, built on three.js 0.187.0.
 Two five-bot squads fight over a hydroelectric dam at dusk: the **Sluice Runners**
 attack, the **Dam Wardens** defend. Plant the breach charge at site **A — the
 Turbine Hall** — or site **B — the Gantry Crane** — or win the round the loud way.
 First side to 7 rounds takes the dam.
+
+Repository: **yudi04cod/aica-spillway**. Built for make.fun — referral code 38m33ybw.
 
 Play it on [make.fun](https://make.fun/c/threejs-fps-01) — or run it locally below.
 
@@ -68,6 +70,12 @@ mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 to the output directory and writes `dossier.json` with the kit's vendored
 `buildDossier` library.
 
+## Play-test
+
+Headless soak tests run the game in a browser with `?test&seed=N` (the
+player is bot-driven, time runs 12x). See `DOSSIER.md` for the scenarios,
+seeds and measured results.
+
 ## Layout
 
 - `game/index.html` — page, HUD DOM and styling
@@ -84,4 +92,4 @@ to the output directory and writes `dossier.json` with the kit's vendored
 
 MIT — see `LICENSE`.
 
-<sub>Entered in the [threejs-fps-01 bounty](https://make.fun/c/threejs-fps-01) on make.fun · referral: MAKEFUN_REFERRAL_CODE</sub>
+<sub>Entered in the [threejs-fps-01 bounty](https://make.fun/c/threejs-fps-01) on make.fun · referral: 38m33ybw</sub>

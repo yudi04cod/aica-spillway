@@ -21,11 +21,15 @@ export function initMatch(scene) {
   state.actors.push(player);
   BOT_NAMES[0].forEach((name, i) => {
     const a = createActor(TEAM.ATK, false, name, ...SPAWNS.atk[i + 1], atkYaw);
-    a.brain = newBrain(); state.actors.push(a); scene.add(a.mesh);
+    a.brain = newBrain();
+    state.actors.push(a);
+    scene.add(a.mesh);
   });
   BOT_NAMES[1].forEach((name, i) => {
     const a = createActor(TEAM.DEF, false, name, ...SPAWNS.def[i], defYaw);
-    a.brain = newBrain(); state.actors.push(a); scene.add(a.mesh);
+    a.brain = newBrain();
+    state.actors.push(a);
+    scene.add(a.mesh);
   });
   for (const a of state.actors) a.money = RULES.startMoney;
   on('kill', (e) => {
@@ -40,10 +44,14 @@ export function initMatch(scene) {
 function transferCharge() {
   const alive = state.actors.filter((a) => a.team === TEAM.ATK && a.alive);
   if (!alive.length) { state.bomb.carrier = null; return; }
-  alive.sort((x, y) => x.bot === y.bot ? 0 : x.bot ? -1 : 1); // bots first: they plant reliably
+  // Bots first: they plant reliably.
+  alive.sort((x, y) => (x.bot === y.bot ? 0 : x.bot ? -1 : 1));
   const next = alive[Math.floor(Math.random() * Math.min(2, alive.length))];
   state.bomb.carrier = next;
-  if (next.bot) { next.brain.role = 'planter'; next.brain.site = next.brain.site || 'A'; }
+  if (next.bot) {
+    next.brain.role = 'planter';
+    next.brain.site = next.brain.site || 'A';
+  }
   emit('chargedrop', { name: next.name });
 }
 
@@ -53,17 +61,28 @@ function startRound() {
   resetBomb();
   state.roundClock = 0;
   const atkYaw = -Math.PI / 2, defYaw = Math.PI / 2;
+  const defActors = state.actors.filter((x) => x.team === TEAM.DEF);
   state.actors.forEach((a, i) => {
-    const spawn = a.team === TEAM.ATK ? SPAWNS.atk[i % 5] : SPAWNS.def[state.actors.filter((x) => x.team === TEAM.DEF).indexOf(a)];
+    const spawn = a.team === TEAM.ATK
+      ? SPAWNS.atk[i % 5]
+      : SPAWNS.def[defActors.indexOf(a)];
     const wasDead = !a.alive;
     resetActorForRound(a, spawn[0], spawn[1], a.team === TEAM.ATK ? atkYaw : defYaw);
     if (wasDead) {
       // Death costs the loadout: back to a sidearm and no utility.
-      a.inv.primary = null; a.inv.sidearm = makeWeapon('p9');
-      a.inv.frag = 0; a.inv.smoke = 0; a.hasArmor = false; a.armorPool = 0; a.kit = false;
+      a.inv.primary = null;
+      a.inv.sidearm = makeWeapon('p9');
+      a.inv.frag = 0;
+      a.inv.smoke = 0;
+      a.hasArmor = false;
+      a.armorPool = 0;
+      a.kit = false;
     }
     a.cur = a.inv.primary ? 'primary' : 'sidearm';
-    if (a.bot) { a.brain = Object.assign(a.brain || newBrain(), newBrain()); botBuy(a); }
+    if (a.bot) {
+      a.brain = Object.assign(a.brain || newBrain(), newBrain());
+      botBuy(a);
+    }
   });
   // The charge starts with a random Runner (bot preferred as planter).
   const atkBots = state.actors.filter((a) => a.team === TEAM.ATK && a.bot);
@@ -93,12 +112,19 @@ function endRound(winner, why) {
 
 function plantCharge(planter, site) {
   const b = state.bomb;
-  b.planted = true; b.site = site; b.planter = planter;
-  b.x = planter.pos.x; b.z = planter.pos.z;
-  b.timer = RULES.bombSeconds; b.defuseT = 0; b.defuser = null;
+  b.planted = true;
+  b.site = site;
+  b.planter = planter;
+  b.x = planter.pos.x;
+  b.z = planter.pos.z;
+  b.timer = RULES.bombSeconds;
+  b.defuseT = 0;
+  b.defuser = null;
   state.phase = PHASE.PLANTED;
   planter.money = Math.min(RULES.maxMoney, planter.money + RULES.plantBonus);
-  for (const a of state.actors) if (a.team === TEAM.ATK) a.money = Math.min(RULES.maxMoney, a.money + RULES.plantTeamPay);
+  for (const a of state.actors) {
+    if (a.team === TEAM.ATK) a.money = Math.min(RULES.maxMoney, a.money + RULES.plantTeamPay);
+  }
   emit('planted', { x: b.x, z: b.z, site });
 }
 
@@ -108,24 +134,34 @@ export function updateRounds(dt) {
   if (state.phase === PHASE.LIVE || state.phase === PHASE.PLANTED) state.roundClock += dt;
 
   if (state.phase === PHASE.BUY) {
-    if (state.phaseT <= 0) { state.phase = PHASE.LIVE; state.phaseT = RULES.roundSeconds; state.freeze = false; }
+    if (state.phaseT <= 0) {
+      state.phase = PHASE.LIVE;
+      state.phaseT = RULES.roundSeconds;
+      state.freeze = false;
+    }
     return;
   }
 
   if (state.phase === PHASE.LIVE) {
-    // Plant channel: the carrier (bot via brain, player via E) holds still
-    // inside a site.
+    // Plant channel: the carrier (bot via brain, player via E) holds
+    // still inside a site.
     let planter = b.plantingBy;
     if (!planter && state.player.alive && b.carrier === state.player && intent.use) {
       if (inSite(state.player.pos.x, state.player.pos.z, 'A')) planter = state.player;
       else if (inSite(state.player.pos.x, state.player.pos.z, 'B')) planter = state.player;
     }
     if (planter && planter.alive && planter === b.carrier) {
-      const site = inSite(planter.pos.x, planter.pos.z, 'A') ? 'A' : inSite(planter.pos.x, planter.pos.z, 'B') ? 'B' : null;
+      const site = inSite(planter.pos.x, planter.pos.z, 'A') ? 'A'
+        : inSite(planter.pos.x, planter.pos.z, 'B') ? 'B' : null;
       if (site) {
         b.plantT += dt;
-        if (Math.floor(b.plantT * 4) !== Math.floor((b.plantT - dt) * 4)) emit('planttick', { x: planter.pos.x, z: planter.pos.z });
-        if (b.plantT >= RULES.plantSeconds) { plantCharge(planter, site); b.plantT = 0; }
+        if (Math.floor(b.plantT * 4) !== Math.floor((b.plantT - dt) * 4)) {
+          emit('planttick', { x: planter.pos.x, z: planter.pos.z });
+        }
+        if (b.plantT >= RULES.plantSeconds) {
+          plantCharge(planter, site);
+          b.plantT = 0;
+        }
       } else b.plantT = Math.max(0, b.plantT - dt * 2);
     } else b.plantT = Math.max(0, b.plantT - dt * 2);
     b.plantingBy = null;
@@ -142,7 +178,10 @@ export function updateRounds(dt) {
     // The beep quickens as the fuse burns down.
     const interval = b.timer > 20 ? 1 : b.timer > 10 ? 0.5 : 0.25;
     beepAcc += dt;
-    if (beepAcc >= interval) { beepAcc = 0; emit('bombtick', { x: b.x, z: b.z, fast: b.timer <= 10 }); }
+    if (beepAcc >= interval) {
+      beepAcc = 0;
+      emit('bombtick', { x: b.x, z: b.z, fast: b.timer <= 10 });
+    }
     // Defuse channel.
     const defuser = b.defuser;
     if (defuser && defuser.alive && Math.hypot(defuser.pos.x - b.x, defuser.pos.z - b.z) < 2.2) {
@@ -153,7 +192,10 @@ export function updateRounds(dt) {
         emit('defused', { x: b.x, z: b.z });
         return endRound(TEAM.DEF, 'defuse');
       }
-    } else { b.defuseT = Math.max(0, b.defuseT - dt * 2); b.defuseNeed = 0; }
+    } else {
+      b.defuseT = Math.max(0, b.defuseT - dt * 2);
+      b.defuseNeed = 0;
+    }
     b.defuser = null;
     if (aliveCount(TEAM.DEF) === 0) return endRound(TEAM.ATK, 'elimination');
     if (b.timer <= 0) {
@@ -180,11 +222,20 @@ export function updateRounds(dt) {
 
   if (state.phase === PHASE.MATCH) {
     if (state.phaseT <= 0) {
-      state.score = [0, 0]; state.round = 1; state.matchWinner = -1;
+      state.score = [0, 0];
+      state.round = 1;
+      state.matchWinner = -1;
       for (const a of state.actors) {
-        a.money = RULES.startMoney; a.kills = 0; a.deaths = 0;
-        a.inv.primary = null; a.inv.sidearm = makeWeapon('p9');
-        a.inv.frag = 0; a.inv.smoke = 0; a.hasArmor = false; a.armorPool = 0; a.kit = false;
+        a.money = RULES.startMoney;
+        a.kills = 0;
+        a.deaths = 0;
+        a.inv.primary = null;
+        a.inv.sidearm = makeWeapon('p9');
+        a.inv.frag = 0;
+        a.inv.smoke = 0;
+        a.hasArmor = false;
+        a.armorPool = 0;
+        a.kit = false;
         a.alive = false; // force the loadout reset path in startRound
       }
       startRound();

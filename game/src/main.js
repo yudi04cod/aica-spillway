@@ -92,23 +92,37 @@ function step(dt) {
 
 const testlog = [];
 let killCount = 0, plantCount = 0;
-const stats = { kills: 0, headKills: 0, shots: 0, plants: 0, defuses: 0, roundsEnded: 0, lastWhy: '' };
+const stats = {
+  kills: 0, headKills: 0, shots: 0, plants: 0, defuses: 0,
+  roundsEnded: 0, lastWhy: '', trail: [],
+};
 if (TEST) {
   state.player.brain = newBrain();
   state.player.brain.role = 'escort';
-  on('kill', (e) => { killCount++; stats.kills++; if (e.head) stats.headKills++; });
+  on('kill', (e) => {
+    killCount++;
+    stats.kills++;
+    if (e.head) stats.headKills++;
+  });
   on('hit', () => { stats.hits = (stats.hits || 0) + 1; });
   on('planted', () => { plantCount++; stats.plants++; });
   on('shot', () => stats.shots++);
   on('defused', () => stats.defuses++);
-  on('roundend', (e) => { stats.roundsEnded++; stats.lastWhy = e.why; stats.whys = stats.whys || {}; stats.whys[e.why] = (stats.whys[e.why] || 0) + 1; });
+  on('roundend', (e) => {
+    stats.roundsEnded++;
+    stats.lastWhy = e.why;
+    stats.whys = stats.whys || {};
+    stats.whys[e.why] = (stats.whys[e.why] || 0) + 1;
+  });
   window.__stats = stats;
   let lastLog = 0, lastTrail = 0;
-  stats.trail = [];
   setInterval(() => {
     stats.maxPlantT = Math.max(stats.maxPlantT || 0, state.bomb.plantT);
     const c = state.bomb.carrier;
-    stats.carrier = c ? { name: c.name, role: c.brain && c.brain.role, site: c.brain && c.brain.site, x: Math.round(c.pos.x), z: Math.round(c.pos.z), alive: c.alive } : null;
+    stats.carrier = c
+      ? { name: c.name, role: c.brain && c.brain.role, site: c.brain && c.brain.site,
+          x: Math.round(c.pos.x), z: Math.round(c.pos.z), alive: c.alive }
+      : null;
     if (c && state.time - lastTrail >= 8 && stats.trail.length < 60) {
       lastTrail = state.time;
       stats.trail.push(`${Math.round(state.time)}:${c.name}@${Math.round(c.pos.x)},${Math.round(c.pos.z)}${c.alive ? '' : ' DEAD'} r${state.round} ${state.phase}`);
@@ -126,34 +140,41 @@ if (TEST) {
   window.__testReady = true;
 }
 
+// Staged compositions for the screenshots: fixed positions, a live
+// round, and (for play/fight) the player firing in bursts.
 function stageShot() {
   const p = state.player;
-  state.phase = PHASE.LIVE; state.phaseT = 92; state.freeze = false;
-  const give = (a, x, z, yaw) => { a.pos.set(x, 0, z); a.yaw = yaw; a.vel.set(0, 0, 0); };
+  state.phase = PHASE.LIVE;
+  state.phaseT = 92;
+  state.freeze = false;
+  const place = (a, x, z, yaw) => { a.pos.set(x, 0, z); a.yaw = yaw; a.vel.set(0, 0, 0); };
   const def = state.actors.filter((a) => a.team === TEAM.DEF);
   const atk = state.actors.filter((a) => a.team === TEAM.ATK && a.bot);
   if (SHOT === 'start') {
-    give(p, -42, 1, -Math.PI / 2);
-    give(atk[0], -40, -2, -Math.PI / 2);
-    give(atk[1], -39, 4, -Math.PI / 2);
+    place(p, -42, 1, -Math.PI / 2);
+    place(atk[0], -40, -2, -Math.PI / 2);
+    place(atk[1], -39, 4, -Math.PI / 2);
   } else if (SHOT === 'play') {
-    give(p, -10, -13, -Math.PI / 2);
+    place(p, -10, -13, -Math.PI / 2);
     p.inv.primary = makeWeapon('vk47');
     p.cur = 'primary';
-    give(def[0], 6, -12.5, Math.PI / 2);
-    def[0].brain.enemy = p; def[0].brain.seenT = state.time;
-    give(atk[0], -5, -9, -Math.PI / 2);
+    place(def[0], 6, -12.5, Math.PI / 2);
+    def[0].brain.enemy = p;
+    def[0].brain.seenT = state.time;
+    place(atk[0], -5, -9, -Math.PI / 2);
     setTestScript(() => ({ f: 0, s: 0, jump: false, fire: state.tick % 50 < 26 }));
   } else if (SHOT === 'fight') {
-    give(p, 27, -23.5, -Math.PI / 2);
-    give(def[1], 35, -19.5, Math.PI / 2);
-    def[1].brain.enemy = p; def[1].brain.seenT = state.time;
-    give(atk[1], 23, -20, -Math.PI / 2);
-    give(def[2], 40, -24, Math.PI);
+    place(p, 27, -23.5, -Math.PI / 2);
+    place(def[1], 35, -19.5, Math.PI / 2);
+    def[1].brain.enemy = p;
+    def[1].brain.seenT = state.time;
+    place(atk[1], 23, -20, -Math.PI / 2);
+    place(def[2], 40, -24, Math.PI);
     setTestScript(() => ({ f: 0, s: 0, jump: false, fire: state.tick % 44 < 20 }));
   } else if (SHOT === 'end') {
-    give(p, 28, -23, -Math.PI / 2);
-    state.score = [6, 4]; state.round = 11;
+    place(p, 28, -23, -Math.PI / 2);
+    state.score = [6, 4];
+    state.round = 11;
     window.__forceScore = true;
     emit('roundwin', { won: true, winner: 0, why: 'elimination' });
   }
@@ -163,10 +184,10 @@ if (SHOT) setTimeout(stageShot, 350);
 
 // ---- frame loop ------------------------------------------------------------------
 
-let last = performance.now(), acc = 0;
+let last = performance.now(), acc = 0, frameCount = 0;
 function frame(now) {
   requestAnimationFrame(frame);
-  let dt = Math.min(0.1, (now - last) / 1000);
+  const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   const scale = TEST ? 12 : (state.slowmo || 1);
   acc += dt * scale;
@@ -191,7 +212,6 @@ function frame(now) {
   endFrame();
   renderer.render(scene, camera);
 }
-let frameCount = 0;
 
 // After death: watch from the first living teammate's shoulder.
 function poseSpectator() {
@@ -199,7 +219,8 @@ function poseSpectator() {
   if (mate) {
     camera.position.set(mate.pos.x, mate.pos.y + 1.58, mate.pos.z);
     camera.rotation.order = 'YXZ';
-    camera.rotation.y = mate.yaw; camera.rotation.x = mate.pitch;
+    camera.rotation.y = mate.yaw;
+    camera.rotation.x = mate.pitch;
   } else {
     camera.position.set(0, 42, 34);
     camera.lookAt(0, 0, 0);

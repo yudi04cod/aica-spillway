@@ -63,7 +63,7 @@ function rayActor(a, o, d, maxT) {
   const top = a.crouch ? 1.1 : 1.36;
   _seg.set(0, top - 0.3, 0);
   _pt.copy(o).setY(o.y - 0.3);
-  // Solve closest approach between the ray and the segment in closed form
+  // Closest approach between the ray and the segment, in closed form
   // (both parameterised, clamped) — cheap and allocation-free.
   const rx = _pt.x - px, ry = _pt.y - a.pos.y, rz = _pt.z - pz;
   const a1 = d.dot(d), b1 = d.y * _seg.y, c1 = _seg.y * _seg.y;
@@ -77,13 +77,16 @@ function rayActor(a, o, d, maxT) {
   s = Math.max(0, Math.min(1, s));
   t = Math.max(0, (b1 * s - d1) / a1);
   if (t > 0 && t < maxT && (!best || t < best.t)) {
-    const qx = _pt.x + d.x * t - px, qy = (_pt.y + d.y * t) - (a.pos.y + _seg.y * s), qz = _pt.z + d.z * t - pz;
+    const qx = _pt.x + d.x * t - px;
+    const qy = (_pt.y + d.y * t) - (a.pos.y + _seg.y * s);
+    const qz = _pt.z + d.z * t - pz;
     if (qx * qx + qy * qy + qz * qz < 0.36 * 0.36) best = { t, head: false };
   }
   return best;
 }
 
-const _o = new THREE.Vector3(), _d = new THREE.Vector3(), _hit = { x: 0, y: 0, z: 0, t: 0 };
+const _o = new THREE.Vector3(), _d = new THREE.Vector3();
+const _hit = { x: 0, y: 0, z: 0, t: 0 };
 
 // Fire one shot (all pellets) for actor `a`. Returns true if it fired.
 export function fireWeapon(a, applyDamage) {
@@ -106,7 +109,7 @@ export function fireWeapon(a, applyDamage) {
   _o.set(a.pos.x, eyeHeight(a), a.pos.z);
   const speed = Math.hypot(a.vel.x, a.vel.z);
   let spread = def.spread + (a.bloom || 0);
-  spread *= 1 + speed * 0.38;                    // moving blooms the cone
+  spread *= 1 + speed * 0.38; // moving blooms the cone
   if (a.crouch) spread *= 0.68;
   if (!a.grounded) spread *= 2.1;
   const teamColor = a.team === 0 ? [0.25, 0.9, 1] : [1, 0.62, 0.2];
@@ -116,7 +119,8 @@ export function fireWeapon(a, applyDamage) {
     // Pitch around the camera-right axis, then a random cone offset.
     const cp = Math.cos(a.pitch + (a.recoil || 0)), sp = Math.sin(a.pitch + (a.recoil || 0));
     _d.y = sp;
-    _d.x *= cp; _d.z *= cp;
+    _d.x *= cp;
+    _d.z *= cp;
     _d.x += (Math.random() - 0.5) * 2 * spread;
     _d.y += (Math.random() - 0.5) * 2 * spread;
     _d.z += (Math.random() - 0.5) * 2 * spread;
@@ -164,15 +168,17 @@ export function updateWeapon(a) {
   const w = currentWeapon(a);
   if (w && w.reloadEnd > 0 && state.time >= w.reloadEnd) {
     const take = Math.min(w.def.mag - w.ammo, w.reserve);
-    w.ammo += take; w.reserve -= take; w.reloadEnd = 0;
+    w.ammo += take;
+    w.reserve -= take;
+    w.reloadEnd = 0;
   }
   a.bloom = Math.max(0, (a.bloom || 0) - 0.028 * (1 / 60));
   a.recoil = Math.max(0, (a.recoil || 0) - 0.05 * (1 / 60));
 }
 
-// ---- grenades --------------------------------------------------------------
+// ---- grenades ---------------------------------------------------------------
 
-const grenades = []; // {kind, pos, vel, fuse, mesh}
+const grenades = []; // {kind, pos, vel, fuse, mesh, owner}
 const nadeGeo = new THREE.SphereGeometry(0.11, 10, 8);
 const nadeMats = {
   frag: new THREE.MeshStandardMaterial({ color: 0x3d4a42, roughness: 0.6 }),
@@ -189,7 +195,9 @@ export function throwGrenade(a, kind) {
   if (kind === 'frag') a.inv.frag--; else a.inv.smoke--;
   const dir = new THREE.Vector3(-Math.sin(a.yaw), 0, -Math.cos(a.yaw));
   const pitch = a.pitch + 0.32;
-  dir.y = Math.sin(pitch); dir.x *= Math.cos(pitch); dir.z *= Math.cos(pitch);
+  dir.y = Math.sin(pitch);
+  dir.x *= Math.cos(pitch);
+  dir.z *= Math.cos(pitch);
   const mesh = new THREE.Mesh(nadeGeo, nadeMats[kind]);
   const pos = new THREE.Vector3(a.pos.x, eyeHeight(a) - 0.1, a.pos.z);
   mesh.position.copy(pos);
@@ -225,7 +233,8 @@ export function updateGrenades(dt, applyDamage) {
       if (g.pos.y < 0.11) {
         g.pos.y = 0.11;
         g.vel.y = Math.abs(g.vel.y) * 0.42;
-        g.vel.x *= 0.72; g.vel.z *= 0.72;
+        g.vel.x *= 0.72;
+        g.vel.z *= 0.72;
         if (Math.abs(g.vel.y) < 0.7) g.vel.y = 0;
       }
     }

@@ -1,6 +1,7 @@
-// fx.js — transient visuals, all pooled: tracer lines, impact particles,
-// muzzle flashes, explosion fireballs and smoke clouds. Nothing here is
-// allocated per frame; pools are sized once at init and recycled.
+// fx.js — transient visuals, all pooled: tracer lines, impact
+// particles, muzzle flashes, explosion fireballs and smoke clouds.
+// Nothing here allocates per frame; the pools are sized once at init
+// and recycled, so a firefight never stutters the garbage collector.
 
 import * as THREE from 'three';
 
@@ -8,14 +9,14 @@ const MAX_TRACERS = 96;
 const MAX_PARTICLES = 900;
 
 let scene = null;
-let tracerGeo, tracerPos, tracerCol, tracerLife; // Float32 arrays
+let tracerGeo, tracerPos, tracerCol, tracerLife;
 let points, pPos, pVel, pLife, pMaxLife, pCol;
-let flashes = [];
+const flashes = []; // {mesh, t, grow?, temp?}
 const smokes = []; // {mesh, t, dur, r, x, y, z}
 
 export function initFx(s) {
   scene = s;
-  // Tracers as one LineSegments with per-vertex colours.
+  // Tracers live in one LineSegments with per-vertex colours.
   tracerPos = new Float32Array(MAX_TRACERS * 6);
   tracerCol = new Float32Array(MAX_TRACERS * 6);
   tracerLife = new Float32Array(MAX_TRACERS);
@@ -27,7 +28,7 @@ export function initFx(s) {
   lines.frustumCulled = false;
   scene.add(lines);
 
-  // Particles as one Points cloud.
+  // Particles live in one Points cloud.
   pPos = new Float32Array(MAX_PARTICLES * 3);
   pVel = new Float32Array(MAX_PARTICLES * 3);
   pLife = new Float32Array(MAX_PARTICLES);
@@ -59,7 +60,8 @@ export function initFx(s) {
 
 let tracerCursor = 0;
 export function tracer(x0, y0, z0, x1, y1, z1, r, g, b) {
-  const i = tracerCursor; tracerCursor = (tracerCursor + 1) % MAX_TRACERS;
+  const i = tracerCursor;
+  tracerCursor = (tracerCursor + 1) % MAX_TRACERS;
   tracerPos.set([x0, y0, z0, x1, y1, z1], i * 6);
   tracerCol.set([r, g, b, r * 0.25, g * 0.25, b * 0.25], i * 6);
   tracerLife[i] = 0.07;
@@ -70,15 +72,21 @@ export function tracer(x0, y0, z0, x1, y1, z1, r, g, b) {
 let pCursor = 0;
 export function burst(x, y, z, n, r, g, b, speed, life, up = 1.6) {
   for (let k = 0; k < n; k++) {
-    const i = pCursor; pCursor = (pCursor + 1) % MAX_PARTICLES;
-    pPos[i * 3] = x; pPos[i * 3 + 1] = y; pPos[i * 3 + 2] = z;
-    const th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
+    const i = pCursor;
+    pCursor = (pCursor + 1) % MAX_PARTICLES;
+    pPos[i * 3] = x;
+    pPos[i * 3 + 1] = y;
+    pPos[i * 3 + 2] = z;
+    const th = Math.random() * Math.PI * 2;
+    const ph = Math.acos(2 * Math.random() - 1);
     const sp = speed * (0.3 + Math.random() * 0.7);
     pVel[i * 3] = Math.sin(ph) * Math.cos(th) * sp;
     pVel[i * 3 + 1] = Math.abs(Math.cos(ph)) * sp * up * 0.5 + Math.random() * up * 0.4;
     pVel[i * 3 + 2] = Math.sin(ph) * Math.sin(th) * sp;
     pLife[i] = pMaxLife[i] = life * (0.6 + Math.random() * 0.7);
-    pCol[i * 3] = r; pCol[i * 3 + 1] = g; pCol[i * 3 + 2] = b;
+    pCol[i * 3] = r;
+    pCol[i * 3 + 1] = g;
+    pCol[i * 3 + 2] = b;
   }
   points.geometry.attributes.color.needsUpdate = true;
 }
@@ -99,7 +107,10 @@ export function explosionFx(x, y, z, big) {
   burst(x, y + 0.5, z, big ? 90 : 40, 1, 0.55, 0.15, big ? 13 : 8, 0.9);
   burst(x, y + 0.5, z, big ? 50 : 20, 0.5, 0.45, 0.4, 6, 1.4);
   const flash = new THREE.Mesh(new THREE.SphereGeometry(big ? 3.4 : 1.8, 14, 10),
-    new THREE.MeshBasicMaterial({ color: 0xffa63e, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }));
+    new THREE.MeshBasicMaterial({
+      color: 0xffa63e, transparent: true, opacity: 0.85,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
   flash.position.set(x, y + 0.6, z);
   scene.add(flash);
   flashes.push({ mesh: flash, t: big ? 0.5 : 0.3, grow: big ? 14 : 8, temp: true });
@@ -133,16 +144,15 @@ export function smokeBlocks(ax, ay, az, bx, by, bz) {
 }
 
 export function updateFx(dt) {
-  let anyTracer = false;
   for (let i = 0; i < MAX_TRACERS; i++) {
     if (tracerLife[i] <= 0) continue;
     tracerLife[i] -= dt;
     if (tracerLife[i] <= 0) {
-      tracerPos[i * 6 + 1] = -100; tracerPos[i * 6 + 4] = -100;
+      tracerPos[i * 6 + 1] = -100;
+      tracerPos[i * 6 + 4] = -100;
       tracerGeo.attributes.position.needsUpdate = true;
-    } else anyTracer = true;
+    }
   }
-  void anyTracer;
   for (let i = 0; i < MAX_PARTICLES; i++) {
     if (pLife[i] <= 0) continue;
     pLife[i] -= dt;
@@ -151,7 +161,10 @@ export function updateFx(dt) {
     pPos[i * 3] += pVel[i * 3] * dt;
     pPos[i * 3 + 1] += pVel[i * 3 + 1] * dt;
     pPos[i * 3 + 2] += pVel[i * 3 + 2] * dt;
-    if (pPos[i * 3 + 1] < 0.03) { pPos[i * 3 + 1] = 0.03; pVel[i * 3 + 1] *= -0.3; }
+    if (pPos[i * 3 + 1] < 0.03) {
+      pPos[i * 3 + 1] = 0.03;
+      pVel[i * 3 + 1] *= -0.3;
+    }
   }
   points.geometry.attributes.position.needsUpdate = true;
   for (let i = flashes.length - 1; i >= 0; i--) {
@@ -178,7 +191,10 @@ export function updateFx(dt) {
 
 export function clearTransientFx() {
   tracerLife.fill(0);
-  for (let i = 0; i < MAX_TRACERS; i++) { tracerPos[i * 6 + 1] = -100; tracerPos[i * 6 + 4] = -100; }
+  for (let i = 0; i < MAX_TRACERS; i++) {
+    tracerPos[i * 6 + 1] = -100;
+    tracerPos[i * 6 + 4] = -100;
+  }
   pLife.fill(0);
   for (let i = 0; i < MAX_PARTICLES; i++) pPos[i * 3 + 1] = -50;
   for (const s of smokes) scene.remove(s.mesh);
